@@ -219,9 +219,10 @@ const CommitteeDashboard = () => {
               <Nav.Link onClick={() => navigate('/manageSchedules')} className="nav-link-custom rounded-2 p-2 mx-1">
                 <FaCalendarAlt className="me-2" /> Manage Schedules & Levels
               </Nav.Link>
-              <Nav.Link href="manageStu-enhanced-display.html" className="nav-link-custom rounded-2 p-2 mx-1">
+              <Nav.Link onClick={() => navigate('/managestudents')} className="nav-link-custom rounded-2 p-2 mx-1">
                 <FaUsers className="me-2" /> Manage Students
               </Nav.Link>
+
               <Nav.Link href="addElective.html" className="nav-link-custom rounded-2 p-2 mx-1">
                 <FaBook className="me-2" /> Course Information
               </Nav.Link>
@@ -309,7 +310,7 @@ const CommitteeDashboard = () => {
           </section>
         </main>
       </Container>
-    </div>
+    </div >
   );
 };
 
