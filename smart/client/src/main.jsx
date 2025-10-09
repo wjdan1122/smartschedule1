@@ -34,6 +34,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
                 {/* المسارات المحمية التي تتطلب تسجيل الدخول */}
                 <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
                 <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+                <Route path="/managestudents" element={<PrivateRoute><ManageStudents /></PrivateRoute>} />
 
                 {/* مسار إدارة الجداول الجديد */}
                 <Route path="/manageschedules" element={<PrivateRoute><ManageSchedules /></PrivateRoute>} />
