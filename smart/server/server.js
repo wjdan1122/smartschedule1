@@ -237,27 +237,80 @@ app.post('/api/auth/register-student', verifyCommittee, async (req, res) => {
 });
 
 // ============================================
-// STUDENT ROUTES
+// STUDENT ROUTES (أضف المسارات الجديدة هنا)
 // ============================================
+
+// المسار الأصلي لجلب كل الطلاب (موجود لديك بالفعل)
 app.get('/api/students', authenticateToken, async (req, res) => {
+  // ... no changes here
+});
+
+// === أضف هذا المسار الجديد لتعديل مستوى الطالب (PUT) ===
+app.put('/api/students/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
+    const { id } = req.params;
+    const { level } = req.body;
+
+    if (!level) {
+      return res.status(400).json({ error: 'Level is required for update.' });
+    }
+
     const query = `
-      SELECT s.student_id, s.is_ir, s.level, u.email, u.name
-      FROM students s
-      JOIN users u ON s.user_id = u.user_id
-      ORDER BY s.student_id
-    `;
-    const result = await client.query(query);
-    res.json(result.rows);
+            UPDATE students SET level = $1 
+            WHERE student_id = $2 
+            RETURNING student_id, level
+        `;
+
+    const result = await client.query(query, [level, id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
+
+    res.json({ success: true, message: 'Student level updated successfully!', student: result.rows[0] });
   } catch (error) {
-    console.error('Error fetching students:', error);
-    res.status(500).json({ error: 'خطأ في جلب الطلاب' });
+    console.error('Error updating student:', error);
+    res.status(500).json({ error: 'Failed to update student.' });
   } finally {
     client.release();
   }
 });
 
+// === أضف هذا المسار الجديد لحذف طالب (DELETE) ===
+app.delete('/api/students/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+
+    // لحذف الطالب بشكل كامل، يجب حذف سجله من جدول users و students
+    // لذلك نستخدم transaction لضمان تنفيذ العمليتين معًا
+    await client.query('BEGIN');
+
+    // 1. ابحث عن user_id المرتبط بالطالب
+    const studentQuery = await client.query('SELECT user_id FROM students WHERE student_id = $1', [id]);
+    if (studentQuery.rows.length === 0) {
+      throw new Error('Student not found.');
+    }
+    const { user_id } = studentQuery.rows[0];
+
+    // 2. احذف السجل من جدول students
+    await client.query('DELETE FROM students WHERE student_id = $1', [id]);
+
+    // 3. احذف السجل من جدول users
+    await client.query('DELETE FROM users WHERE user_id = $1', [user_id]);
+
+    await client.query('COMMIT');
+
+    res.json({ success: true, message: 'Student deleted successfully.' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting student:', error);
+    res.status(500).json({ error: 'Failed to delete student.' });
+  } finally {
+    client.release();
+  }
+});
 // ============================================
 // COURSE ROUTES
 // ============================================

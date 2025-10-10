@@ -2,16 +2,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Card, Form, Button, Alert, Row, Col, Badge, Spinner } from 'react-bootstrap';
 import { FaArrowRight, FaUserGraduate, FaSave, FaUndo, FaTrash } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
-import { studentAPI } from '../services/api'; // ✅ استيراد دوال إدارة الطلاب
+import { studentAPI } from '../services/api'; // ✅ Import student management API functions
 
 // ------------------------------------------------------------------
-// المكون الرئيسي
+// MAIN COMPONENT
 // ------------------------------------------------------------------
 const ManageStudents = () => {
     const [students, setStudents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [formData, setFormData] = useState({
-        studentId: '', // الرقم الجامعي
+        studentId: '',
         studentName: '',
         currentLevel: ''
     });
@@ -35,7 +35,7 @@ const ManageStudents = () => {
     };
 
     // ------------------------------------------------------------------
-    // جلب الطلاب من الـ API (GET)
+    // FETCH STUDENTS (GET)
     // ------------------------------------------------------------------
     const fetchAllStudents = useCallback(async () => {
         setLoading(true);
@@ -47,11 +47,11 @@ const ManageStudents = () => {
             console.error('Error fetching students:', err.response || err);
 
             if (err.response && (err.response.status === 401 || err.response.status === 403)) {
-                setError('فشل المصادقة. يرجى تسجيل الدخول مجدداً بصلاحيات إدارية.');
-                showMessage('فشل المصادقة. قد تحتاج لإعادة تسجيل الدخول.', 'danger');
+                setError('Authentication failed. Please log in again with admin privileges.');
+                showMessage('Authentication failed. Please log in again.', 'danger');
             } else {
-                setError('فشل تحميل بيانات الطلاب. يرجى التأكد من تشغيل الخادم.');
-                showMessage(`خطأ: ${err.message}`, 'danger');
+                setError('Failed to load student data. Please ensure the server is running.');
+                showMessage(`Error: ${err.message}`, 'danger');
             }
             setStudents([]);
         } finally {
@@ -61,14 +61,11 @@ const ManageStudents = () => {
 
     useEffect(() => {
         fetchAllStudents();
-        document.body.style.direction = 'rtl';
-        return () => {
-            document.body.style.direction = 'ltr';
-        };
+        document.body.style.direction = 'ltr';
     }, [fetchAllStudents]);
 
     // ------------------------------------------------------------------
-    // إضافة طالب جديد (POST)
+    // ADD NEW STUDENT (POST)
     // ------------------------------------------------------------------
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -76,7 +73,7 @@ const ManageStudents = () => {
         const { studentId, studentName, currentLevel } = formData;
 
         if (!studentId || !studentName || !currentLevel) {
-            showMessage('يرجى تعبئة جميع الحقول', 'danger');
+            showMessage('Please fill in all fields.', 'danger');
             return;
         }
 
@@ -87,12 +84,10 @@ const ManageStudents = () => {
                 level: parseInt(currentLevel),
                 email: `${studentId}@student.ksu.edu.sa`,
                 password: 'ksu_default_pwd',
-                // ✅ التعديل المطلوب: تعيين القيمة الافتراضية إلى TRUE
                 is_ir: true,
             };
 
             const response = await studentAPI.create(newStudentData);
-
             fetchAllStudents();
 
             setFormData({
@@ -101,34 +96,34 @@ const ManageStudents = () => {
                 currentLevel: ''
             });
 
-            showMessage(`تم إضافة الطالب ${studentName} بنجاح!`, 'success');
+            showMessage(`Student ${studentName} added successfully!`, 'success');
 
         } catch (err) {
             console.error('Submit error:', err.response || err);
-            const errMsg = err.response?.data?.error || err.message || 'فشل إضافة الطالب.';
+            const errMsg = err.response?.data?.error || err.message || 'Failed to add student.';
             showMessage(errMsg, 'danger');
         }
     };
 
     // ------------------------------------------------------------------
-    // حذف طالب (DELETE)
+    // DELETE STUDENT (DELETE)
     // ------------------------------------------------------------------
     const deleteStudent = async (studentId) => {
-        if (window.confirm('هل أنت متأكد من حذف هذا الطالب؟')) {
+        if (window.confirm('Are you sure you want to delete this student?')) {
             try {
                 await studentAPI.delete(studentId);
                 fetchAllStudents();
-                showMessage('تم حذف الطالب بنجاح', 'info');
+                showMessage('Student deleted successfully.', 'info');
             } catch (err) {
                 console.error('Delete error:', err);
-                const errMsg = err.response?.data?.error || err.message || 'فشل حذف الطالب.';
+                const errMsg = err.response?.data?.error || err.message || 'Failed to delete student.';
                 showMessage(errMsg, 'danger');
             }
         }
     };
 
     // ------------------------------------------------------------------
-    // حفظ التغييرات (PUT)
+    // SAVE CHANGES (PUT)
     // ------------------------------------------------------------------
     const saveStudentChanges = async (studentId, newLevel) => {
         const studentToUpdate = students.find(s => s.student_id === studentId);
@@ -138,16 +133,16 @@ const ManageStudents = () => {
             const updateData = { level: parseInt(newLevel) };
             await studentAPI.update(studentId, updateData);
             fetchAllStudents();
-            showMessage(`تم حفظ تغييرات الطالب ${studentToUpdate.name} بنجاح!`, 'success');
+            showMessage(`Changes saved for student ${studentToUpdate.name}!`, 'success');
         } catch (err) {
             console.error('Save changes error:', err);
-            const errMsg = err.response?.data?.error || err.message || 'فشل حفظ التغييرات.';
+            const errMsg = err.response?.data?.error || err.message || 'Failed to save changes.';
             showMessage(errMsg, 'danger');
         }
     };
 
     const resetStudent = (studentId) => {
-        showMessage('تم إعادة تعيين بيانات الطالب (وهمي)', 'info');
+        showMessage('Student data reset (mock action)', 'info');
     };
 
     return (
@@ -160,11 +155,11 @@ const ManageStudents = () => {
                             className="mb-3 bg-white bg-opacity-20 border-2 border-white border-opacity-30"
                             style={{ borderRadius: '8px' }}
                         >
-                            <FaArrowRight className="me-2" /> العودة للرئيسية
+                            <FaArrowRight className="me-2" /> Back to Dashboard
                         </Button>
-                        <h1 className="mb-2" style={{ fontSize: '2rem' }}>إدارة الطلاب بالمستويات</h1>
+                        <h1 className="mb-2" style={{ fontSize: '2rem' }}>Manage Students by Levels</h1>
                         <p className="mb-0" style={{ opacity: 0.9, fontSize: '1.1rem' }}>
-                            أدخل بيانات الطالب وحدد المستوى الحالي
+                            Enter student information and select the current level
                         </p>
                     </Card.Header>
 
@@ -173,7 +168,7 @@ const ManageStudents = () => {
                             <Card.Body className="p-4">
                                 <h3 className="mb-4 d-flex align-items-center">
                                     <FaUserGraduate className="me-2 text-primary" style={{ fontSize: '1.5rem' }} />
-                                    إضافة طالب جديد
+                                    Add New Student
                                 </h3>
 
                                 {(error || message.text) && (
@@ -186,7 +181,7 @@ const ManageStudents = () => {
                                     <Row className="mb-3">
                                         <Col md={6}>
                                             <Form.Group>
-                                                <Form.Label className="fw-bold">الرقم الجامعي</Form.Label>
+                                                <Form.Label className="fw-bold">Student ID</Form.Label>
                                                 <Form.Control
                                                     type="text"
                                                     name="studentId"
@@ -199,11 +194,11 @@ const ManageStudents = () => {
                                         </Col>
                                         <Col md={6}>
                                             <Form.Group>
-                                                <Form.Label className="fw-bold">اسم الطالب</Form.Label>
+                                                <Form.Label className="fw-bold">Student Name</Form.Label>
                                                 <Form.Control
                                                     type="text"
                                                     name="studentName"
-                                                    placeholder="أدخل اسم الطالب الكامل"
+                                                    placeholder="Enter full student name"
                                                     value={formData.studentName}
                                                     onChange={handleInputChange}
                                                     required
@@ -215,16 +210,16 @@ const ManageStudents = () => {
                                     <Row className="mb-3">
                                         <Col md={6}>
                                             <Form.Group>
-                                                <Form.Label className="fw-bold">المستوى الحالي</Form.Label>
+                                                <Form.Label className="fw-bold">Current Level</Form.Label>
                                                 <Form.Select
                                                     name="currentLevel"
                                                     value={formData.currentLevel}
                                                     onChange={handleInputChange}
                                                     required
                                                 >
-                                                    <option value="" disabled>اختر المستوى الحالي</option>
+                                                    <option value="" disabled>Select current level</option>
                                                     {levels.map(level => (
-                                                        <option key={level} value={level}>المستوى {level}</option>
+                                                        <option key={level} value={level}>Level {level}</option>
                                                     ))}
                                                 </Form.Select>
                                             </Form.Group>
@@ -243,24 +238,23 @@ const ManageStudents = () => {
                                         }}
                                         disabled={loading}
                                     >
-                                        إضافة الطالب وتحديد المستوى
+                                        Add Student
                                     </Button>
                                 </Form>
                             </Card.Body>
                         </Card>
 
-                        {/* قسم عرض الطلاب المضافين */}
                         {loading ? (
                             <div className="text-center p-5">
                                 <Spinner animation="border" variant="primary" />
-                                <p className="mt-2">جاري تحميل قائمة الطلاب...</p>
+                                <p className="mt-2">Loading students list...</p>
                             </div>
                         ) : students.length > 0 ? (
                             <Card className="shadow-sm" style={{ borderRadius: '12px' }}>
                                 <Card.Body className="p-4">
                                     <h3 className="mb-4 d-flex align-items-center">
                                         <span className="me-2">📋</span>
-                                        الطلاب المضافين
+                                        Added Students
                                     </h3>
 
                                     <Row xs={1} md={2} className="g-4">
@@ -274,9 +268,8 @@ const ManageStudents = () => {
                                                         <div className="mb-3 pb-3 border-bottom">
                                                             <div className="mb-2">
                                                                 <Badge bg="primary" className="fs-6">
-                                                                    الرقم الجامعي: {student.student_id}
+                                                                    Student ID: {student.student_id}
                                                                 </Badge>
-                                                                {/* عرض حالة IR_ST */}
                                                                 {student.is_ir && (
                                                                     <Badge bg="info" className="fs-6 me-2">
                                                                         IR_ST
@@ -284,7 +277,7 @@ const ManageStudents = () => {
                                                                 )}
                                                             </div>
                                                             <div className="fs-5 fw-bold text-dark">
-                                                                الاسم: {student.name}
+                                                                Name: {student.name}
                                                             </div>
                                                         </div>
 
@@ -296,8 +289,8 @@ const ManageStudents = () => {
                                                             }}
                                                         >
                                                             <div className="d-flex justify-content-between mb-2">
-                                                                <span className="fw-bold text-secondary">المستوى الحالي:</span>
-                                                                <span className="fw-bold text-dark">المستوى {student.level}</span>
+                                                                <span className="fw-bold text-secondary">Current Level:</span>
+                                                                <span className="fw-bold text-dark">Level {student.level}</span>
                                                             </div>
                                                         </div>
 
@@ -309,7 +302,7 @@ const ManageStudents = () => {
                                                                 onClick={() => saveStudentChanges(student.student_id, student.level)}
                                                                 style={{ borderRadius: '8px' }}
                                                             >
-                                                                <FaSave className="me-1" /> حفظ
+                                                                <FaSave className="me-1" /> Save
                                                             </Button>
                                                             <Button
                                                                 variant="secondary"
@@ -318,7 +311,7 @@ const ManageStudents = () => {
                                                                 onClick={() => resetStudent(student.student_id)}
                                                                 style={{ borderRadius: '8px' }}
                                                             >
-                                                                <FaUndo className="me-1" /> إعادة
+                                                                <FaUndo className="me-1" /> Reset
                                                             </Button>
                                                             <Button
                                                                 variant="danger"
@@ -327,7 +320,7 @@ const ManageStudents = () => {
                                                                 onClick={() => deleteStudent(student.student_id)}
                                                                 style={{ borderRadius: '8px' }}
                                                             >
-                                                                <FaTrash className="me-1" /> حذف
+                                                                <FaTrash className="me-1" /> Delete
                                                             </Button>
                                                         </div>
                                                     </Card.Body>
@@ -339,7 +332,7 @@ const ManageStudents = () => {
                             </Card>
                         ) : (
                             <div className="text-center text-gray-600 p-6 bg-gray-50 border-dashed border-2 border-gray-300 rounded-lg">
-                                <p>لا يوجد طلاب حالياً في القائمة.</p>
+                                <p>No students currently in the list.</p>
                             </div>
                         )}
                     </Card.Body>
