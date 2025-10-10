@@ -80,7 +80,6 @@ const verifyCommittee = (req, res, next) => {
 // ============================================
 
 // Login endpoint - handles both users and students
-// Login endpoint - handles both users and students
 app.post('/api/auth/login', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -118,13 +117,13 @@ app.post('/api/auth/login', async (req, res) => {
         token,
         user: {
           id: student.student_id,
-          user_id: student.user_id,  // ✅ Include user_id
+          user_id: student.user_id,
           email: student.email,
-          name: student.name,        // ✅ Changed from full_name to name
+          name: student.name,
           level: student.level,
           is_ir: student.is_ir,
-          role: 'student',           // ✅ Set role as student
-          type: 'student',           // ✅ Set type as student
+          role: 'student',
+          type: 'student',
         },
       });
     }
@@ -147,9 +146,9 @@ app.post('/api/auth/login', async (req, res) => {
         token,
         user: {
           id: user.user_id,
-          user_id: user.user_id,  // ✅ Include user_id
+          user_id: user.user_id,
           email: user.email,
-          name: user.name,        // ✅ Changed from full_name to name
+          name: user.name,
           role: user.role,
           type: 'user',
         },
@@ -165,6 +164,7 @@ app.post('/api/auth/login', async (req, res) => {
     client.release();
   }
 });
+
 // Register new user (faculty/staff)
 app.post('/api/auth/register-user', verifyCommittee, async (req, res) => {
   const client = await pool.connect();
@@ -242,48 +242,14 @@ app.post('/api/auth/register-student', verifyCommittee, async (req, res) => {
 // ============================================
 // STUDENT ROUTES
 // ============================================
-// ============================================
-// STUDENT ROUTES
-// ============================================
 
-// Get single student by user_id
+// ✅ Get single student by user_id - NEW ENDPOINT
 app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { user_id } = req.params;
-    const query = `
-      SELECT 
-        s.student_id, 
-        s.is_ir, 
-        s.level, 
-        u.user_id,
-        u.email, 
-        u.name,
-        (SELECT COUNT(*) FROM courses sc WHERE sc.student_id = s.student_id) as total_courses
-      FROM students s
-      JOIN users u ON s.user_id = u.user_id
-      WHERE u.user_id = $1
-    `;
-    const result = await client.query(query, [user_id]);
+    console.log('Fetching student for user_id:', user_id);
     
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Student not found' });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Error fetching student:', error);
-    res.status(500).json({ error: 'خطأ في جلب بيانات الطالب' });
-  } finally {
-    client.release();
-  }
-});
-
-// Get single student by user_id
-app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { user_id } = req.params;
     const query = `
       SELECT 
         s.student_id, 
@@ -299,6 +265,8 @@ app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
     `;
     const result = await client.query(query, [user_id]);
     
+    console.log('Student query result:', result.rows);
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found' });
     }
@@ -306,7 +274,88 @@ app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error fetching student:', error);
-    res.status(500).json({ error: 'خطأ في جلب بيانات الطالب' });
+    res.status(500).json({ error: 'Error fetching student data' });
+  } finally {
+    client.release();
+  }
+});
+
+// Get all students
+app.get('/api/students', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const query = `
+      SELECT s.student_id, s.is_ir, s.level, u.email, u.name
+      FROM students s
+      JOIN users u ON s.user_id = u.user_id
+      ORDER BY s.student_id
+    `;
+    const result = await client.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching students:', error);
+    res.status(500).json({ error: 'خطأ في جلب الطلاب' });
+  } finally {
+    client.release();
+  }
+});
+
+// Update student level
+app.put('/api/students/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { level } = req.body;
+
+    if (!level) {
+      return res.status(400).json({ error: 'Level is required for update.' });
+    }
+
+    const query = `
+      UPDATE students SET level = $1 
+      WHERE student_id = $2 
+      RETURNING student_id, level
+    `;
+
+    const result = await client.query(query, [level, id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
+
+    res.json({ success: true, message: 'Student level updated successfully!', student: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating student:', error);
+    res.status(500).json({ error: 'Failed to update student.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Delete student
+app.delete('/api/students/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+
+    await client.query('BEGIN');
+
+    const studentQuery = await client.query('SELECT user_id FROM students WHERE student_id = $1', [id]);
+    if (studentQuery.rows.length === 0) {
+      throw new Error('Student not found.');
+    }
+    const { user_id } = studentQuery.rows[0];
+
+    await client.query('DELETE FROM students WHERE student_id = $1', [id]);
+    await client.query('DELETE FROM users WHERE user_id = $1', [user_id]);
+
+    await client.query('COMMIT');
+
+    res.json({ success: true, message: 'Student deleted successfully.' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting student:', error);
+    res.status(500).json({ error: 'Failed to delete student.' });
   } finally {
     client.release();
   }
@@ -315,8 +364,6 @@ app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
 // ============================================
 // COURSE ROUTES
 // ============================================
-
-// --- 1. جلب المقررات (مع إمكانية الفلترة حسب المستوى والقسم)
 app.get('/api/courses', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -344,7 +391,6 @@ app.get('/api/courses', async (req, res) => {
   }
 });
 
-// --- 2. جلب المقررات الاختيارية فقط
 app.get('/api/courses/elective', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -359,11 +405,9 @@ app.get('/api/courses/elective', async (req, res) => {
   }
 });
 
-// --- 3. إضافة مقرر جديد (محمي بكلمة مرور اللجنة)
 app.post('/api/courses', verifyCommittee, async (req, res) => {
   const client = await pool.connect();
   try {
-    // لاحظ أننا لا نمرر preid لأنه غير موجود في جدولك
     const { name, credit, level, is_elective, dept_code } = req.body;
     const query = `
       INSERT INTO courses (name, credit, level, is_elective, dept_code)
@@ -484,7 +528,6 @@ app.get('/api/sections', async (req, res) => {
       ORDER BY c.level, s.day_code, s.start_time
     `;
     const result = await client.query(query);
-    // Cast level to integer for consistency
     const sectionsWithCastedLevel = result.rows.map((row) => ({
       ...row,
       level: row.level != null ? parseInt(row.level, 10) : row.level,
@@ -493,6 +536,72 @@ app.get('/api/sections', async (req, res) => {
   } catch (error) {
     console.error('Error fetching sections with course info:', error);
     res.status(500).json({ error: 'خطأ في جلب الشعب مع معلومات المقرر' });
+  } finally {
+    client.release();
+  }
+});
+
+// ============================================
+// SCHEDULE VERSION ROUTES
+// ============================================
+app.get('/api/schedule-versions', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { level } = req.query;
+    if (!level) {
+      return res.status(400).json({ message: 'Level query parameter is required.' });
+    }
+    const query = 'SELECT * FROM schedule_versions WHERE level = $1 ORDER BY created_at DESC';
+    const result = await client.query(query, [level]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching schedule versions:', error);
+    res.status(500).json({ message: 'Failed to fetch schedule versions.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/schedule-versions', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { level, student_count, version_comment, sections } = req.body;
+    if (!level || !sections) {
+      return res.status(400).json({ message: 'Level and sections are required.' });
+    }
+    const query = `
+      INSERT INTO schedule_versions (level, student_count, version_comment, sections)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `;
+    const result = await client.query(query, [level, student_count, version_comment, JSON.stringify(sections)]);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error saving schedule version:', error);
+    res.status(500).json({ message: 'Failed to save schedule version.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/schedule-versions/:id/activate', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    await client.query('BEGIN');
+    const levelResult = await client.query('SELECT level FROM schedule_versions WHERE id = $1', [id]);
+    if (levelResult.rows.length === 0) {
+      throw new Error('Version not found.');
+    }
+    const { level } = levelResult.rows[0];
+    await client.query('UPDATE schedule_versions SET is_active = false WHERE level = $1', [level]);
+    await client.query('UPDATE schedule_versions SET is_active = true WHERE id = $1', [id]);
+    await client.query('COMMIT');
+    res.json({ success: true, message: `Version ${id} activated successfully.` });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error activating schedule version:', error);
+    res.status(500).json({ message: 'Failed to activate schedule version.' });
   } finally {
     client.release();
   }
@@ -532,7 +641,220 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
 });
 
 // ============================================
-// HEALTH CHECK
+// AI SCHEDULER ROUTE
+// ============================================
+app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { level, currentLevel, currentSchedule, user_command } = req.body;
+    const scheduleLevel = level || currentLevel;
+
+    const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
+    const rules = rulesResult.rows.map(r => r.text);
+
+    const seCoursesResult = await client.query(
+      'SELECT course_id, name, credit FROM courses WHERE level = $1 AND dept_code = $2',
+      [currentLevel, 'SE']
+    );
+    const requiredSeCourses = seCoursesResult.rows;
+
+    if (requiredSeCourses.length === 0) {
+      return res.status(404).json({
+        error: `No Software Engineering courses found for level ${currentLevel}.`
+      });
+    }
+
+    const fixedSections = currentSchedule.sections.filter(sec => sec.dept_code !== 'SE');
+    const occupiedSlots = fixedSections.map(sec =>
+      `${sec.day_code} from ${sec.start_time.substring(0, 5)} to ${sec.end_time.substring(0, 5)} for ${sec.dept_code}`
+    );
+
+    const finalCommand = user_command ||
+      `Please schedule the provided SE courses optimally, avoiding all occupied slots and following all rules.`;
+
+    const randomSeed = Math.random();
+
+    const systemInstruction = `
+You are a university academic scheduler AI.
+Your task is to schedule the provided list of Software Engineering (SE) courses into available slots,
+following all rules strictly.
+You MUST treat the 'occupied slots' list as fixed and unmovable.
+`;
+
+    const userQuery = `
+You are a university academic scheduler AI.
+
+🎯 **Objective:** Generate a weekly schedule for the Software Engineering (SE) courses for Level ${currentLevel} students.
+Each SE course must be scheduled according to its total credit hours, distributed across the available weekly time slots.
+
+📘 **Course Scheduling Rules:**
+1. Each course's total scheduled hours must exactly equal its credit value.
+2. Split the credit hours intelligently across the week:
+   - Prefer multiple shorter blocks (1-hour or 2-hour sessions) rather than long continuous sessions.
+   - Avoid any 3-hour continuous sessions unless there is absolutely no alternative.
+3. Spread sessions across different days when possible (e.g., a 3-credit course could meet M/W/Th or S/T/W).
+4. Maintain realistic start and end times (08:00 to 15:00).
+5. No overlap between SE course sessions and the "occupied slots" listed below.
+6. Try to minimize idle gaps within the same day.
+7. Use only valid days: S, M, T, W, H.
+8. Each session must have "section_type": "LECTURE".
+
+💡 **Scheduling Philosophy:**
+Think like a human academic scheduler:
+- Maintain balance between mornings and afternoons.
+- Avoid scheduling the same course twice in the same day (unless it's a 2-hour block).
+- Distribute sessions fairly among available time slots.
+
+🧩 **Required SE Courses (with credit hours):**
+${JSON.stringify(requiredSeCourses.map(c => ({
+      course_id: c.course_id,
+      name: c.name,
+      credit: c.credit,
+      section_type: 'LECTURE'
+    })), null, 2)}
+
+🚫 **Occupied Slots (Non-SE official courses):**
+${JSON.stringify(occupiedSlots, null, 2)}
+
+🧠 **Active Scheduling Constraints (Rules):**
+${JSON.stringify(rules, null, 2)}
+
+🔄 **Variation Seed:** ${randomSeed}
+
+✅ **Output Format (JSON ONLY):**
+Return a valid JSON array of objects, each representing one SE course block:
+[
+  {
+    "course_id": number,
+    "day": "S" | "M" | "T" | "W" | "H",
+    "start_time": "HH:MM",
+    "end_time": "HH:MM",
+    "section_type": "LECTURE"
+  }
+]
+Return only this JSON array, with no explanation text.
+`;
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY is not configured.' });
+    }
+
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+    const payload = {
+      contents: [{ parts: [{ text: userQuery }] }],
+      systemInstruction: { parts: [{ text: systemInstruction }] },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.9,
+        responseSchema: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              course_id: { type: 'NUMBER' },
+              day: { type: 'STRING' },
+              start_time: { type: 'STRING' },
+              end_time: { type: 'STRING' },
+              section_type: { type: 'STRING' }
+            },
+            required: ['course_id', 'day', 'start_time', 'end_time', 'section_type']
+          }
+        }
+      }
+    };
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+    const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!jsonText) {
+      console.error('AI Response Debug:', JSON.stringify(result, null, 2));
+      throw new Error('AI did not return a valid schedule. Please check the server logs.');
+    }
+
+    const generatedSeSchedule = JSON.parse(jsonText);
+
+    const correctedSeSchedule = generatedSeSchedule.map(section => ({
+      ...section,
+      day_code: section.day,
+      is_ai_generated: true,
+      dept_code: 'SE',
+      student_group: currentSchedule.id
+    }));
+
+    const finalSchedule = [...fixedSections, ...correctedSeSchedule];
+
+    res.json({
+      success: true,
+      message: 'Schedule generated by AI.',
+      schedule: finalSchedule
+    });
+
+  } catch (error) {
+    console.error('AI Schedule Generation error:', error);
+    res.status(500).json({ error: error.message || 'Failed to process AI request.' });
+  } finally {
+    client.release();
+  }
+});
+
+// ============================================
+// RULES ROUTES
+// ============================================
+app.get('/api/rules', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const query = 'SELECT rule_id, text FROM rules ORDER BY rule_id';
+    const result = await client.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching rules:', error);
+    res.status(500).json({ error: 'Failed to fetch rules.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/rules', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: 'Rule text is required.' });
+    const query = 'INSERT INTO rules (text) VALUES ($1) RETURNING *';
+    const result = await client.query(query, [text]);
+    res.json({ success: true, rule: result.rows[0] });
+  } catch (error) {
+    console.error('Error adding rule:', error);
+    res.status(500).json({ error: 'Failed to add rule.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/rules/:ruleId', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { ruleId } = req.params;
+    const query = 'DELETE FROM rules WHERE rule_id = $1';
+    await client.query(query, [ruleId]);
+    res.json({ success: true, message: 'Rule deleted.' });
+  } catch (error) {
+    console.error('Error deleting rule:', error);
+    res.status(500).json({ error: 'Failed to delete rule.' });
+  } finally {
+    client.release();
+  }
+});
+
+// ============================================
+// HEALTH CHECK & FINAL MIDDLEWARE
 // ============================================
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -557,171 +879,4 @@ process.on('SIGTERM', () => {
     console.log('Database pool closed');
     process.exit(0);
   });
-});
-
-// ============================================
-// AI SCHEDULER ROUTES
-// ============================================
-app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { currentLevel, currentSchedule = { sections: [] }, seCourses = [], rules = [] } = req.body;
-
-    // 1. تجميع بيانات الجدول الحالي (الأوقات المشغولة) بشكل آمن
-    const currentSectionsMap = {};
-    (currentSchedule.sections || []).forEach((sec) => {
-      // التحقق من وجود البيانات الأساسية (اليوم والوقت)
-      if (!sec.day_code || !sec.start_time || !sec.end_time) {
-        console.log('Skipping invalid section because of missing data:', sec);
-        return; // تجاهل هذه الشعبة والانتقال إلى التالية
-      }
-      const timeSlot = `${sec.day_code} ${sec.start_time.substring(0, 5)} - ${sec.end_time.substring(0, 5)}`;
-      if (sec.section_type === 'LECTURE' || sec.section_type === 'LAB' || sec.type === 'LAB') {
-        const courseNameToSplit = sec.course_name || `Course ${sec.course_id || 'Unknown'}`;
-        const deptCode = sec.dept_code || 'N/A';
-        const sectionType = sec.section_type || sec.type || 'LEC';
-        currentSectionsMap[timeSlot] = `${deptCode} ${courseNameToSplit.split(' ')[0]} (${sectionType})`;
-      }
-    });
-    const occupiedSlots = JSON.stringify(currentSectionsMap);
-
-    // 2. تجميع بيانات مواد هندسة البرمجيات التي يجب جدولتها
-    const requiredSeCourses = seCourses.map((c) => ({ id: c.course_id, name: c.name, credit: c.credit }));
-
-    // 3. بناء موجه Gemini (Prompt)
-    const systemInstruction = `You are a university academic scheduler AI. Your task is to generate a time schedule for Software Engineering (SE) courses based on predefined occupied slots (Official non-SE courses). The schedule must be based on a 60-minute time slot (e.g., 08:00-09:00, 09:00-10:00). Output MUST be a structured JSON array of objects.`;
-    const userQuery = `Please schedule the following SE courses into the available time slots for Level ${currentLevel}. The timetable operates from Sunday (S) to Thursday (H).
-- **Mandatory Courses to Schedule:** ${JSON.stringify(requiredSeCourses)}
-- **Current Rules/Constraints:** ${Array.isArray(rules) ? rules.join('; ') : String(rules)}
-- **Occupied Slots to AVOID (Official Non-SE Courses):** ${occupiedSlots}
-Generate a schedule that avoids all occupied slots and minimizes time gaps. Use the format: [{course_id: number, day: string (S, M, T, W, H), start_time: string (HH:MM), end_time: string (HH:MM), section_type: 'LECTURE'}].`;
-
-    // 4. استدعاء Gemini API
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not defined in environment variables.');
-    }
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-    const payload = {
-      contents: [{ parts: [{ text: userQuery }] }],
-      systemInstruction: { parts: [{ text: systemInstruction }] },
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'ARRAY',
-          items: {
-            type: 'OBJECT',
-            properties: {
-              course_id: { type: 'NUMBER' },
-              day: { type: 'STRING' },
-              start_time: { type: 'STRING' },
-              end_time: { type: 'STRING' },
-              section_type: { type: 'STRING' },
-            },
-            required: ['course_id', 'day', 'start_time', 'end_time', 'section_type'],
-          },
-        },
-      },
-    };
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    const result = await response.json();
-
-    console.log('=============== AI RESPONSE DEBUG ===============');
-    console.log('Raw response from AI:', JSON.stringify(result, null, 2));
-    console.log('===============================================');
-
-    const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!jsonText) {
-      throw new Error('AI did not return a valid schedule. Check the AI prompt or rules.');
-    }
-
-    let generatedSchedule = [];
-    try {
-      generatedSchedule = JSON.parse(jsonText);
-    } catch (parseErr) {
-      // In some cases the AI returns extra text — try to extract JSON substring
-      const firstBrace = jsonText.indexOf('[');
-      const lastBrace = jsonText.lastIndexOf(']');
-      if (firstBrace >= 0 && lastBrace > firstBrace) {
-        const maybeJson = jsonText.substring(firstBrace, lastBrace + 1);
-        generatedSchedule = JSON.parse(maybeJson);
-      } else {
-        throw parseErr;
-      }
-    }
-
-    const correctedSchedule = generatedSchedule.map((section) => {
-      if (section.day && !section.day_code) {
-        section.day_code = section.day;
-        delete section.day;
-      }
-      section.is_ai_generated = true;
-      return section;
-    });
-
-    res.json({ success: true, message: 'تم توليد الجدول بنجاح بواسطة AI.', schedule: correctedSchedule });
-  } catch (error) {
-    console.error('AI Schedule Generation error:', error);
-    res.status(500).json({ error: error.message || 'خطأ في معالجة طلب الذكاء الاصطناعي.' });
-  } finally {
-    client.release();
-  }
-});
-
-// ============================================
-// RULES ROUTES
-// ============================================
-
-// 1. جلب جميع القواعد (GET)
-app.get('/api/rules', async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const query = 'SELECT rule_id, text FROM rules ORDER BY rule_id';
-    const result = await client.query(query);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching rules:', error);
-    res.status(500).json({ error: 'Failed to fetch rules.' });
-  } finally {
-    client.release();
-  }
-});
-
-// 2. إضافة قاعدة جديدة (POST)
-app.post('/api/rules', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ error: 'Rule text is required.' });
-    const query = 'INSERT INTO rules (text) VALUES ($1) RETURNING *';
-    const result = await client.query(query, [text]);
-    res.json({ success: true, rule: result.rows[0] });
-  } catch (error) {
-    console.error('Error adding rule:', error);
-    res.status(500).json({ error: 'Failed to add rule.' });
-  } finally {
-    client.release();
-  }
-});
-
-// 3. حذف قاعدة (DELETE)
-app.delete('/api/rules/:ruleId', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { ruleId } = req.params;
-    const query = 'DELETE FROM rules WHERE rule_id = $1';
-    await client.query(query, [ruleId]);
-    res.json({ success: true, message: 'Rule deleted.' });
-  } catch (error) {
-    console.error('Error deleting rule:', error);
-    res.status(500).json({ error: 'Failed to delete rule.' });
-  } finally {
-    client.release();
-  }
 });

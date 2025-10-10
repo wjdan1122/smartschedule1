@@ -41,14 +41,13 @@ function Login() {
         throw new Error('Invalid login response from server');
       }
 
-      // ✅ Backend returns: { id, user_id, email, full_name, level, is_ir, type }
-      // Store the user object with consistent field names
+      // Backend returns the correct structure
       const userToStore = {
         user_id: user.user_id,
         id: user.id,
         email: user.email,
-        name: user.full_name,
-        role: user.type === 'student' ? 'student' : user.role,
+        name: user.name,
+        role: user.role,
         level: user.level,
         is_ir: user.is_ir,
         type: user.type

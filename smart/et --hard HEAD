@@ -1,0 +1,13 @@
+[33med76a2d[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m Revert "FIX: حل مشاكل المصادقة والأرقام الصفرية (0) وتحديث عبارات الترحيب"
+[33mc9d2732[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m erge branch 'main' of
+[33m35e7a7f[m FIX: حل مشاكل المصادقة والأرقام الصفرية (0) وتحديث عبارات الترحيب
+[33m4a55fde[m Merge pull request #1 from sarahAlbu/main
+[33mc9992f9[m Merge branch 'wjdan1122:main' into main
+[33ma26e83f[m Add signup page, PostgreSQL migration, React+Bootstrap frontend
+[33m909ffad[m Initial commit of SmartSchedule project
+[33m58a1d87[m Initial commit
+[33mac401e2[m Fix: remove wrong submodule reference
+[33m43acd5b[m Complete SMART Schedule Management System
+[33m5a1345c[m Initial commit - SMART Schedule Management System
+[33m8519f11[m 1
+[33m6fc4082[m Initial commit

@@ -32,13 +32,13 @@ export const authAPI = {
 // Student API
 export const studentAPI = {
   getAll: () => api.get('/students'),
-  getById: (userId) => api.get(`/student/${userId}`) // ✅ Add this
+  getById: (userId) => api.get(`/student/${userId}`)
 };
 
 // Course API
 export const courseAPI = {
   getAll: () => api.get('/courses'),
-  getElective: () => api.get('/courses/elective'), // ✅ This is correct
+  getElective: () => api.get('/courses/elective'),
   create: (data) => api.post('/courses', data)
 };
 

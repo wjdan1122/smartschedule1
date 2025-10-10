@@ -5,9 +5,12 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import ManageSchedules from './pages/ManageSchedules';
+import ManageStudents from './pages/ManageStudents';
+import ManageRules from './pages/ManageRules';
 import StudentDashboard from './pages/StudentDashboard';
-import ElectiveVoting from './pages/ElectiveVoting'; // ✅ Add this import
+import ElectiveVoting from './pages/ElectiveVoting';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import './App.css';
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -41,7 +44,6 @@ function App() {
           }
         />
 
-        {/* ✅ Add Elective Voting route */}
         <Route
           path="/elective-voting"
           element={
@@ -56,6 +58,24 @@ function App() {
           element={
             <ProtectedRoute>
               <ManageSchedules />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/managestudents"
+          element={
+            <ProtectedRoute>
+              <ManageStudents />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/managerules"
+          element={
+            <ProtectedRoute>
+              <ManageRules />
             </ProtectedRoute>
           }
         />
