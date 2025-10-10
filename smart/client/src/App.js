@@ -5,6 +5,8 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import ManageSchedules from './pages/ManageSchedules';
+import StudentDashboard from './pages/StudentDashboard';
+import ElectiveVoting from './pages/ElectiveVoting'; // ✅ Add this import
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 function ProtectedRoute({ children }) {
@@ -26,6 +28,25 @@ function App() {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/student-dashboard"
+          element={
+            <ProtectedRoute>
+              <StudentDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ✅ Add Elective Voting route */}
+        <Route
+          path="/elective-voting"
+          element={
+            <ProtectedRoute>
+              <ElectiveVoting />
             </ProtectedRoute>
           }
         />

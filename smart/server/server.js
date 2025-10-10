@@ -80,6 +80,7 @@ const verifyCommittee = (req, res, next) => {
 // ============================================
 
 // Login endpoint - handles both users and students
+// Login endpoint - handles both users and students
 app.post('/api/auth/login', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -88,40 +89,15 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Check if it's a user (faculty/staff)
-    const userQuery = 'SELECT * FROM users WHERE email = $1';
-    const userResult = await client.query(userQuery, [email]);
-    if (userResult.rows.length > 0) {
-      const user = userResult.rows[0];
-      const isValidPassword = await bcrypt.compare(password, user.password);
-      if (!isValidPassword) {
-        return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
-      }
-      const token = jwt.sign(
-        { id: user.user_id, email: user.email, role: user.role, type: 'user' },
-        process.env.JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-      return res.json({
-        token,
-        user: {
-          id: user.user_id,
-          email: user.email,
-          full_name: user.name,
-          role: user.role,
-          type: 'user',
-        },
-      });
-    }
-
-    // Check if it's a student
+    // ✅ FIRST: Check if it's a student
     const studentQuery = `
-      SELECT s.student_id, s.is_ir, s.level, u.user_id, u.email, u.name, u.password
+      SELECT s.student_id, s.is_ir, s.level, u.user_id, u.email, u.name, u.password, u.role
       FROM students s
       JOIN users u ON s.user_id = u.user_id
       WHERE u.email = $1
     `;
     const studentResult = await client.query(studentQuery, [email]);
+    
     if (studentResult.rows.length > 0) {
       const student = studentResult.rows[0];
       const isValidPassword = await bcrypt.compare(password, student.password);
@@ -142,12 +118,40 @@ app.post('/api/auth/login', async (req, res) => {
         token,
         user: {
           id: student.student_id,
-          user_id: student.user_id,
+          user_id: student.user_id,  // ✅ Include user_id
           email: student.email,
-          full_name: student.name,
+          name: student.name,        // ✅ Changed from full_name to name
           level: student.level,
           is_ir: student.is_ir,
-          type: 'student',
+          role: 'student',           // ✅ Set role as student
+          type: 'student',           // ✅ Set type as student
+        },
+      });
+    }
+
+    // ✅ SECOND: If not a student, check if it's a regular user (faculty/staff)
+    const userQuery = 'SELECT * FROM users WHERE email = $1';
+    const userResult = await client.query(userQuery, [email]);
+    if (userResult.rows.length > 0) {
+      const user = userResult.rows[0];
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
+      }
+      const token = jwt.sign(
+        { id: user.user_id, email: user.email, role: user.role, type: 'user' },
+        process.env.JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+      return res.json({
+        token,
+        user: {
+          id: user.user_id,
+          user_id: user.user_id,  // ✅ Include user_id
+          email: user.email,
+          name: user.name,        // ✅ Changed from full_name to name
+          role: user.role,
+          type: 'user',
         },
       });
     }
@@ -161,7 +165,6 @@ app.post('/api/auth/login', async (req, res) => {
     client.release();
   }
 });
-
 // Register new user (faculty/staff)
 app.post('/api/auth/register-user', verifyCommittee, async (req, res) => {
   const client = await pool.connect();
@@ -239,20 +242,71 @@ app.post('/api/auth/register-student', verifyCommittee, async (req, res) => {
 // ============================================
 // STUDENT ROUTES
 // ============================================
-app.get('/api/students', authenticateToken, async (req, res) => {
+// ============================================
+// STUDENT ROUTES
+// ============================================
+
+// Get single student by user_id
+app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
+    const { user_id } = req.params;
     const query = `
-      SELECT s.student_id, s.is_ir, s.level, u.email, u.name
+      SELECT 
+        s.student_id, 
+        s.is_ir, 
+        s.level, 
+        u.user_id,
+        u.email, 
+        u.name,
+        (SELECT COUNT(*) FROM courses sc WHERE sc.student_id = s.student_id) as total_courses
       FROM students s
       JOIN users u ON s.user_id = u.user_id
-      ORDER BY s.student_id
+      WHERE u.user_id = $1
     `;
-    const result = await client.query(query);
-    res.json(result.rows);
+    const result = await client.query(query, [user_id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    
+    res.json(result.rows[0]);
   } catch (error) {
-    console.error('Error fetching students:', error);
-    res.status(500).json({ error: 'خطأ في جلب الطلاب' });
+    console.error('Error fetching student:', error);
+    res.status(500).json({ error: 'خطأ في جلب بيانات الطالب' });
+  } finally {
+    client.release();
+  }
+});
+
+// Get single student by user_id
+app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { user_id } = req.params;
+    const query = `
+      SELECT 
+        s.student_id, 
+        s.is_ir, 
+        s.level, 
+        u.user_id,
+        u.email, 
+        u.name,
+        0 as total_courses
+      FROM students s
+      JOIN users u ON s.user_id = u.user_id
+      WHERE u.user_id = $1
+    `;
+    const result = await client.query(query, [user_id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching student:', error);
+    res.status(500).json({ error: 'خطأ في جلب بيانات الطالب' });
   } finally {
     client.release();
   }

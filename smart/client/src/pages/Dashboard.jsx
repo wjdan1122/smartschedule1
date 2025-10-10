@@ -226,7 +226,7 @@ const CommitteeDashboard = () => {
               <Nav.Link href="addElective.html" className="nav-link-custom rounded-2 p-2 mx-1">
                 <FaBook className="me-2" /> Course Information
               </Nav.Link>
-              <Nav.Link href="rule.html" className="nav-link-custom rounded-2 p-2 mx-1">
+              <Nav.Link href="ManageRules.jsx" className="nav-link-custom rounded-2 p-2 mx-1">
                 <FaBalanceScale className="me-2" /> Manage Rules
               </Nav.Link>
               <Nav.Link href="loadNotification.html" className="nav-link-custom rounded-2 p-2 mx-1">
