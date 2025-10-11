@@ -8,7 +8,8 @@ function Signup() {
         name: '',
         email: '',
         password: '',
-        role: ''
+        role: '',
+        level: ''
     });
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -20,9 +21,22 @@ function Signup() {
     };
 
     const handleChange = (e) => {
-        setFormData({
-            ...formData,
-            [e.target.name]: e.target.value
+        const { name, value } = e.target;
+        setFormData((prevData) => {
+            const updatedData = {
+                ...prevData,
+                [name]: value
+            };
+
+            if (name === 'email') {
+                if (value.endsWith('@student.ksu.edu.sa')) {
+                    updatedData.role = '';
+                } else {
+                    updatedData.level = '';
+                }
+            }
+
+            return updatedData;
         });
     };
 
@@ -62,6 +76,15 @@ function Signup() {
             return;
         }
 
+        if (isStudent) {
+            const levelNumber = parseInt(formData.level, 10);
+            if (!levelNumber || levelNumber < 1) {
+                console.log('ERROR: Invalid level for student');
+                setError('Please enter a valid level for the student (positive number)');
+                return;
+            }
+        }
+
         setLoading(true);
 
         try {
@@ -71,7 +94,7 @@ function Signup() {
                     name: formData.name,
                     email: formData.email,
                     password: formData.password,
-                    level: 1,
+                    level: parseInt(formData.level, 10),
                     is_ir: false,
                     committeePassword: '123'
                 };
@@ -112,6 +135,8 @@ function Signup() {
             setLoading(false);
         }
     };
+
+    const isStudentEmail = formData.email.endsWith('@student.ksu.edu.sa');
 
     return (
         <div className="min-vh-100 d-flex align-items-center" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
@@ -170,14 +195,33 @@ function Signup() {
                                         />
                                     </Form.Group>
 
+                                    {isStudentEmail && (
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Level</Form.Label>
+                                            <Form.Control
+                                                type="number"
+                                                name="level"
+                                                min="1"
+                                                placeholder="Enter your current level"
+                                                value={formData.level}
+                                                onChange={handleChange}
+                                                required
+                                                disabled={loading}
+                                            />
+                                            <Form.Text className="text-muted">
+                                                Example: level 1 for new students
+                                            </Form.Text>
+                                        </Form.Group>
+                                    )}
+
                                     <Form.Group className="mb-3">
                                         <Form.Label>Role</Form.Label>
                                         <Form.Select
                                             name="role"
                                             value={formData.role}
                                             onChange={handleChange}
-                                            required={!formData.email.endsWith('@student.ksu.edu.sa')}
-                                            disabled={loading || formData.email.endsWith('@student.ksu.edu.sa')}
+                                            required={!isStudentEmail}
+                                            disabled={loading || isStudentEmail}
                                         >
                                             <option value="">Select your role</option>
                                             <option value="register">Registrar</option>
@@ -185,7 +229,7 @@ function Signup() {
                                             <option value="load committee">Load Committee</option>
                                             <option value="schedule">Scheduler</option>
                                         </Form.Select>
-                                        {formData.email.endsWith('@student.ksu.edu.sa') && (
+                                        {isStudentEmail && (
                                             <Form.Text className="text-muted">
                                                 Student role will be assigned automatically
                                             </Form.Text>

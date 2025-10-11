@@ -36,6 +36,11 @@ const VotingResults = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedLevel, setSelectedLevel] = useState('3');
+  const [integrationStatus, setIntegrationStatus] = useState({
+    loading: false,
+    success: '',
+    error: ''
+  });
   const academicLevels = [3, 4, 5, 6, 7, 8];
 
   const fetchResults = useCallback(async () => {
@@ -64,21 +69,114 @@ const VotingResults = () => {
     }
   }, []);
 
+  const autoIntegrateApprovedCourse = useCallback(async (courseId, level) => {
+    const levelNumber = parseInt(level, 10);
+    if (!levelNumber) {
+      setIntegrationStatus({
+        loading: false,
+        success: '',
+        error: 'Invalid level provided for schedule integration.'
+      });
+      return;
+    }
+
+    setIntegrationStatus({
+      loading: true,
+      success: '',
+      error: ''
+    });
+
+    try {
+      const [sectionsData, versionsData] = await Promise.all([
+        fetchData('http://localhost:5000/api/sections'),
+        fetchData(`http://localhost:5000/api/schedule-versions?level=${levelNumber}`)
+      ]);
+
+      const activeVersion = versionsData.find((version) => version.is_active);
+      let sectionsSource = [];
+
+      if (activeVersion && activeVersion.sections) {
+        sectionsSource = typeof activeVersion.sections === 'string'
+          ? JSON.parse(activeVersion.sections)
+          : activeVersion.sections;
+      } else {
+        sectionsSource = sectionsData.filter(
+          (section) => section.level != null && parseInt(section.level, 10) === levelNumber
+        );
+      }
+
+      const groupOneSections = sectionsSource.filter((section) => {
+        if (section.student_group == null) return true;
+        const group = parseInt(section.student_group, 10);
+        return Number.isNaN(group) ? true : group === 1;
+      });
+
+      const currentSchedule = {
+        id: 1,
+        sections: groupOneSections
+      };
+
+      const aiResponse = await fetchData('http://localhost:5000/api/schedule/generate', 'POST', {
+        currentLevel: levelNumber,
+        currentSchedule,
+        user_command: `Integrate the newly approved elective course ${courseId} into the Level ${levelNumber} Software Engineering schedule while keeping existing non-SE sessions fixed.`
+      });
+
+      if (!aiResponse?.schedule) {
+        throw new Error('AI schedule could not be generated for the approved course.');
+      }
+
+      const savedVersion = await fetchData('http://localhost:5000/api/schedule-versions', 'POST', {
+        level: levelNumber,
+        student_count: activeVersion?.student_count || 25,
+        version_comment: `Auto AI update after approving course ${courseId} on ${new Date().toLocaleDateString()}`,
+        sections: aiResponse.schedule
+      });
+
+      if (savedVersion?.id) {
+        await fetchData(`http://localhost:5000/api/schedule-versions/${savedVersion.id}/activate`, 'PATCH');
+      }
+
+      setIntegrationStatus({
+        loading: false,
+        success: `AI schedule updated for Level ${levelNumber}.`,
+        error: ''
+      });
+    } catch (integrationError) {
+      console.error('Auto integration failed:', integrationError);
+      setIntegrationStatus({
+        loading: false,
+        success: '',
+        error: integrationError.message || 'Failed to integrate approved course into the schedule.'
+      });
+    }
+  }, []);
+
   useEffect(() => {
     fetchResults();
   }, [fetchResults]);
 
   const handleApprove = async (courseId) => {
     const level = prompt("Please enter the academic level to add this course to (e.g., 5, 6, 7):");
-    if (!level || isNaN(parseInt(level))) {
+    if (!level || Number.isNaN(parseInt(level, 10))) {
       return alert("Invalid level. Please enter a number.");
     }
     try {
-      await fetchData('/api/electives/approve', 'POST', { course_id: courseId, level: parseInt(level) });
+      const levelNumber = parseInt(level, 10);
+      await fetchData('http://localhost:5000/api/electives/approve', 'POST', {
+        course_id: courseId,
+        level: levelNumber
+      });
       alert(`Course approved for Level ${level}.`);
+      await autoIntegrateApprovedCourse(courseId, levelNumber);
       fetchResults();
     } catch (err) {
       alert(`Failed to approve: ${err.message}`);
+      setIntegrationStatus({
+        loading: false,
+        success: '',
+        error: err.message
+      });
     }
   };
 
@@ -90,6 +188,18 @@ const VotingResults = () => {
       <h3 className="text-dark mb-4 d-flex align-items-center">
         <FaVoteYea className="me-2 text-primary" /> Elective Course Voting Results
       </h3>
+      {integrationStatus.loading && (
+        <Alert variant="info" className="mb-4">
+          <Spinner animation="border" size="sm" className="me-2" />
+          Integrating approved course into Level schedule using AI...
+        </Alert>
+      )}
+      {!integrationStatus.loading && integrationStatus.success && (
+        <Alert variant="success" className="mb-4">{integrationStatus.success}</Alert>
+      )}
+      {!integrationStatus.loading && integrationStatus.error && (
+        <Alert variant="danger" className="mb-4">{integrationStatus.error}</Alert>
+      )}
       <Form.Group className="mb-4">
         <Form.Label className="fw-bold">Show Votes From Student Level:</Form.Label>
         <Form.Select value={selectedLevel} onChange={(e) => setSelectedLevel(e.target.value)}>
