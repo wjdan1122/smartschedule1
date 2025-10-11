@@ -31,7 +31,8 @@ export const authAPI = {
 
 // Student API
 export const studentAPI = {
-  getAll: () => api.get('/students')
+  getAll: () => api.get('/students'),
+  getById: (userId) => api.get(`/student/${userId}`)
 };
 
 // Course API
@@ -62,5 +63,7 @@ export const sectionAPI = {
 export const statisticsAPI = {
   get: () => api.get('/statistics')
 };
+
+
 
 export default api;

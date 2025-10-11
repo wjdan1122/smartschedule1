@@ -1,4 +1,4 @@
-// smart3/smart/server/server.js
+console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE ✅✅✅");// smart3/smart/server/server.js
 console.log("👉 Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -74,200 +74,209 @@ const verifyCommittee = (req, res, next) => {
   }
   next();
 };
-
 // ============================================
 // AUTHENTICATION ROUTES
 // ============================================
 
-// Login endpoint - handles both users and students
 app.post('/api/auth/login', async (req, res) => {
   const client = await pool.connect();
   try {
     const { email, password } = req.body;
+
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Check if it's a user (faculty/staff)
-    const userQuery = 'SELECT * FROM users WHERE email = $1';
-    const userResult = await client.query(userQuery, [email]);
-    if (userResult.rows.length > 0) {
-      const user = userResult.rows[0];
-      const isValidPassword = await bcrypt.compare(password, user.password);
-      if (!isValidPassword) {
-        return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
+    // First: Get user + possible student info
+    const query = `
+            SELECT 
+                u.user_id, u.name, u.email, u.password, u.role,
+                s.student_id, s.level, s.is_ir
+            FROM users u
+            LEFT JOIN students s ON u.user_id = s.user_id
+            WHERE u.email = $1
+        `;
+
+    const result = await client.query(query, [email]);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Incorrect credentials' });
+    }
+
+    const user = result.rows[0];
+
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Incorrect credentials' });
+    }
+
+    // ============================
+    // ✅ For Student Users
+    // ============================
+    if (user.role === 'student') {
+      let studentId = user.student_id;
+      let level = user.level;
+      let is_ir = user.is_ir;
+
+      // If student_id wasn't found in the join (maybe student not in table yet)
+      if (!studentId) {
+        const studentResult = await client.query(
+          'SELECT student_id, level, is_ir FROM students WHERE user_id = $1',
+          [user.user_id]
+        );
+
+        if (studentResult.rowCount === 0) {
+          return res.status(403).json({ error: 'User has student role but no student record exists.' });
+        }
+
+        const student = studentResult.rows[0];
+        studentId = student.student_id;
+        level = student.level;
+        is_ir = student.is_ir;
       }
+
       const token = jwt.sign(
-        { id: user.user_id, email: user.email, role: user.role, type: 'user' },
+        { id: studentId, user_id: user.user_id, email: user.email, type: 'student' },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
+
       return res.json({
         token,
         user: {
-          id: user.user_id,
+          id: studentId,
+          user_id: user.user_id,
           email: user.email,
-          full_name: user.name,
-          role: user.role,
-          type: 'user',
+          name: user.name,
+          level: level,
+          is_ir: is_ir,
+          type: 'student',
+          role: 'student'
         },
       });
     }
 
-    // Check if it's a student
-    const studentQuery = `
-      SELECT s.student_id, s.is_ir, s.level, u.user_id, u.email, u.name, u.password
-      FROM students s
-      JOIN users u ON s.user_id = u.user_id
-      WHERE u.email = $1
-    `;
-    const studentResult = await client.query(studentQuery, [email]);
-    if (studentResult.rows.length > 0) {
-      const student = studentResult.rows[0];
-      const isValidPassword = await bcrypt.compare(password, student.password);
-      if (!isValidPassword) {
-        return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
-      }
-      const token = jwt.sign(
-        {
-          id: student.student_id,
-          user_id: student.user_id,
-          email: student.email,
-          type: 'student',
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-      return res.json({
-        token,
-        user: {
-          id: student.student_id,
-          user_id: student.user_id,
-          email: student.email,
-          full_name: student.name,
-          level: student.level,
-          is_ir: student.is_ir,
-          type: 'student',
-        },
-      });
-    }
+    // ============================
+    // ✅ For Non-Student Users
+    // ============================
+    const token = jwt.sign(
+      { id: user.user_id, email: user.email, role: user.role, type: 'user' },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
 
-    // No user or student found
-    return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
+    return res.json({
+      token,
+      user: {
+        id: user.user_id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        type: 'user',
+      },
+    });
+
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'خطأ في الخادم' });
+    res.status(500).json({ error: 'Server error' });
   } finally {
     client.release();
   }
 });
 
-// Register new user (faculty/staff)
-app.post('/api/auth/register-user', verifyCommittee, async (req, res) => {
+// ============================================
+// STUDENT ROUTES
+// ============================================
+
+// Get the active schedule for a specific level (for StudentDashboard)
+app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
   const client = await pool.connect();
+  console.log(`--- [ DIAGNOSTIC ] --- Hit route for level: ${req.params.level}`); // <-- سجل جديد
   try {
-    const { email, password, name, role } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const query = `
-      INSERT INTO users (email, password, name, role)
-      VALUES ($1, $2, $3, $4)
-      RETURNING user_id, email, name, role
-    `;
-    const result = await client.query(query, [
-      email,
-      hashedPassword,
-      name,
-      role,
-    ]);
-    res.json({ success: true, message: 'تمت إضافة المستخدم بنجاح!', user: result.rows[0] });
-  } catch (error) {
-    console.error('Error creating user:', error);
-    if (error.code === '23505') {
-      res.status(400).json({ error: 'البريد الإلكتروني مستخدم بالفعل' });
-    } else {
-      res.status(500).json({ error: 'خطأ في إضافة المستخدم' });
+    const { level } = req.params;
+
+    const scheduleQuery = 'SELECT * FROM schedule_versions WHERE level = $1 AND is_active = true LIMIT 1';
+    const scheduleResult = await client.query(scheduleQuery, [level]);
+
+    if (scheduleResult.rows.length === 0) {
+      console.log(`--- [ DIAGNOSTIC ] --- No active schedule found for level ${level}.`); // <-- سجل جديد
+      return res.status(404).json({ message: `No active schedule found for level ${level}.` });
     }
-  } finally {
-    client.release();
-  }
-});
 
-// Register new student
-app.post('/api/auth/register-student', verifyCommittee, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const { email, password, name, level, is_ir } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const userQuery = `
-      INSERT INTO users (email, password, name, role)
-      VALUES ($1, $2, $3, 'student')
-      RETURNING user_id
-    `;
-    const userResult = await client.query(userQuery, [email, hashedPassword, name]);
-    const userId = userResult.rows[0].user_id;
-    const studentQuery = `
-      INSERT INTO students (user_id, level, is_ir)
-      VALUES ($1, $2, $3)
-      RETURNING student_id
-    `;
-    const studentResult = await client.query(studentQuery, [
-      userId,
-      level,
-      is_ir || false,
-    ]);
-    await client.query('COMMIT');
+    const activeSchedule = scheduleResult.rows[0];
+
+    // --- أهم خطوة تشخيصية ---
+    // سنقوم بطباعة البيانات قبل محاولة إرسالها
+    console.log('--- [ DIAGNOSTIC ] --- Found schedule. Data BEFORE sending:'); // <-- سجل جديد
+    console.log(activeSchedule); // <-- سجل جديد
+
     res.json({
-      success: true,
-      message: 'تمت إضافة الطالب بنجاح!',
-      studentId: studentResult.rows[0].student_id,
-      userId,
+      schedule: activeSchedule,
+      comments: []
     });
+
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => { });
-    console.error('Error creating student:', error);
-    if (error.code === '23505') {
-      res.status(400).json({ error: 'البريد الإلكتروني مستخدم بالفعل' });
-    } else {
-      res.status(500).json({ error: 'خطأ في إضافة الطالب' });
+    // إذا انهار السيرفر، سيتم طباعة الخطأ هنا
+    console.error('--- [ DIAGNOSTIC ] --- CRASH DETECTED IN ROUTE:'); // <-- سجل جديد
+    console.error(error); // <-- سجل جديد
+    res.status(500).json({ message: 'Failed to fetch schedule data due to a server crash.' });
+  } finally {
+    client.release();
+  }
+});
+// Get a single student's full details (can be used in profiles)
+app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { user_id } = req.params;
+    const query = `
+          SELECT s.student_id, s.is_ir, s.level, u.user_id, u.email, u.name, 0 as total_courses
+          FROM students s
+          JOIN users u ON s.user_id = u.user_id
+          WHERE u.user_id = $1
+        `;
+    const result = await client.query(query, [user_id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
     }
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching student:', error);
+    res.status(500).json({ error: 'Error fetching student data' });
   } finally {
     client.release();
   }
 });
 
-// ============================================
-// STUDENT ROUTES (أضف المسارات الجديدة هنا)
-// ============================================
-
-// المسار الأصلي لجلب كل الطلاب (موجود لديك بالفعل)
+// Get all students (for ManageStudents page)
 app.get('/api/students', authenticateToken, async (req, res) => {
-  // ... no changes here
+  const client = await pool.connect();
+  try {
+    const query = `SELECT s.student_id, s.is_ir, s.level, u.email, u.name FROM students s JOIN users u ON s.user_id = u.user_id ORDER BY s.student_id`;
+    const result = await client.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching students:', error);
+    res.status(500).json({ error: 'Error fetching students' });
+  } finally {
+    client.release();
+  }
 });
 
-// === أضف هذا المسار الجديد لتعديل مستوى الطالب (PUT) ===
+// Update a student's level
 app.put('/api/students/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
     const { level } = req.body;
-
     if (!level) {
       return res.status(400).json({ error: 'Level is required for update.' });
     }
-
-    const query = `
-            UPDATE students SET level = $1 
-            WHERE student_id = $2 
-            RETURNING student_id, level
-        `;
-
+    const query = `UPDATE students SET level = $1 WHERE student_id = $2 RETURNING student_id, level`;
     const result = await client.query(query, [level, id]);
-
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found.' });
     }
-
     res.json({ success: true, message: 'Student level updated successfully!', student: result.rows[0] });
   } catch (error) {
     console.error('Error updating student:', error);
@@ -277,31 +286,20 @@ app.put('/api/students/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// === أضف هذا المسار الجديد لحذف طالب (DELETE) ===
+// Delete a student
 app.delete('/api/students/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
-
-    // لحذف الطالب بشكل كامل، يجب حذف سجله من جدول users و students
-    // لذلك نستخدم transaction لضمان تنفيذ العمليتين معًا
     await client.query('BEGIN');
-
-    // 1. ابحث عن user_id المرتبط بالطالب
     const studentQuery = await client.query('SELECT user_id FROM students WHERE student_id = $1', [id]);
     if (studentQuery.rows.length === 0) {
       throw new Error('Student not found.');
     }
     const { user_id } = studentQuery.rows[0];
-
-    // 2. احذف السجل من جدول students
     await client.query('DELETE FROM students WHERE student_id = $1', [id]);
-
-    // 3. احذف السجل من جدول users
     await client.query('DELETE FROM users WHERE user_id = $1', [user_id]);
-
     await client.query('COMMIT');
-
     res.json({ success: true, message: 'Student deleted successfully.' });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -311,6 +309,7 @@ app.delete('/api/students/:id', authenticateToken, async (req, res) => {
     client.release();
   }
 });
+
 // ============================================
 // COURSE ROUTES
 // ============================================
@@ -340,6 +339,7 @@ app.get('/api/courses', async (req, res) => {
     client.release();
   }
 });
+
 app.get('/api/courses/elective', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -353,6 +353,7 @@ app.get('/api/courses/elective', async (req, res) => {
     client.release();
   }
 });
+
 app.post('/api/courses', verifyCommittee, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -377,54 +378,107 @@ app.post('/api/courses', verifyCommittee, async (req, res) => {
     client.release();
   }
 });
+// ============================================
+// VOTING & APPROVAL ROUTES
+// ============================================
 
-// ============================================
-// VOTING ROUTES
-// ============================================
+// Allows a student to cast or update a vote
 app.post('/api/vote', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { student_id, course_id, vote_value } = req.body;
-    const checkQuery = 'SELECT * FROM votes WHERE student_id = $1 AND course_id = $2';
-    const checkResult = await client.query(checkQuery, [student_id, course_id]);
-    if (checkResult.rows.length > 0) {
-      const updateQuery = `
-        UPDATE votes
-        SET vote_value = $1, voted_at = CURRENT_TIMESTAMP
-        WHERE student_id = $2 AND course_id = $3
-        RETURNING *
-      `;
-      await client.query(updateQuery, [vote_value, student_id, course_id]);
-    } else {
-      const insertQuery = `
+    // Using ON CONFLICT for an efficient upsert
+    const query = `
         INSERT INTO votes (student_id, course_id, vote_value)
         VALUES ($1, $2, $3)
-        RETURNING *
-      `;
-      await client.query(insertQuery, [student_id, course_id, vote_value]);
-    }
-    res.json({ success: true, message: 'تم تسجيل الصوت بنجاح!' });
+        ON CONFLICT (student_id, course_id)
+        DO UPDATE SET vote_value = $3, voted_at = NOW();
+    `;
+    await client.query(query, [student_id, course_id, vote_value]);
+    res.json({ success: true, message: 'Vote recorded successfully!' });
   } catch (error) {
     console.error('Error voting:', error);
-    res.status(500).json({ error: 'خطأ في تسجيل الصوت' });
+    res.status(500).json({ error: 'Error recording vote' });
   } finally {
     client.release();
   }
 });
-app.get('/api/votes/course/:course_id', async (req, res) => {
+
+// --- NEW: Check a student's existing votes ---
+app.get('/api/votes/student/:student_id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { course_id } = req.params;
-    const query = 'SELECT * FROM votes WHERE course_id = $1';
-    const result = await client.query(query, [course_id]);
-    res.json(result.rows);
+    const { student_id } = req.params;
+    const query = 'SELECT course_id, vote_value FROM votes WHERE student_id = $1';
+    const result = await client.query(query, [student_id]);
+    res.json(result.rows); // Will return an empty array if no votes exist
   } catch (error) {
-    console.error('Error fetching votes:', error);
-    res.status(500).json({ error: 'خطأ في جلب الأصوات' });
+    console.error('Error fetching student votes:', error);
+    res.status(500).json({ error: 'Failed to fetch student votes.' });
   } finally {
     client.release();
   }
 });
+
+
+app.get('/api/votes/results', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    // This query fetches all elective courses and provides a breakdown of votes by student level
+    const query = `
+            SELECT
+                c.course_id,
+                c.name,
+                c.is_approved,
+                s.level AS student_level,
+                COUNT(v.vote_id) AS vote_count
+            FROM
+                courses c
+            LEFT JOIN
+                votes v ON c.course_id = v.course_id
+            LEFT JOIN
+                students s ON v.student_id = s.student_id
+            WHERE
+                c.is_elective = true
+            GROUP BY
+                c.course_id, c.name, c.is_approved, s.level
+            ORDER BY
+                c.course_id, s.level;
+        `;
+    const result = await client.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching voting results:', error);
+    res.status(500).json({ error: 'Failed to fetch voting results.' });
+  } finally {
+    client.release();
+  }
+});
+
+// --- Approve an elective course FOR A SPECIFIC LEVEL ---
+app.post('/api/electives/approve', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { course_id, level } = req.body;
+    if (!course_id || !level) {
+      return res.status(400).json({ error: 'Course ID and Level are required.' });
+    }
+    const query = `
+            INSERT INTO approved_electives_by_level (course_id, level) 
+            VALUES ($1, $2)
+            ON CONFLICT (course_id, level) DO NOTHING;
+        `;
+    await client.query(query, [course_id, level]);
+    res.json({ success: true, message: `Course ${course_id} approved for Level ${level}.` });
+  } catch (error) {
+    console.error('Error approving course for level:', error);
+    res.status(500).json({ error: 'Failed to approve course.' });
+  } finally {
+    client.release();
+  }
+});
+
+
 
 // ============================================
 // SCHEDULE ROUTES
@@ -442,6 +496,7 @@ app.get('/api/schedules', async (req, res) => {
     client.release();
   }
 });
+
 app.post('/api/schedules', verifyCommittee, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -488,7 +543,7 @@ app.get('/api/sections', async (req, res) => {
 });
 
 // ============================================
-// SCHEDULE VERSION ROUTES (NEW)
+// SCHEDULE VERSION ROUTES
 // ============================================
 app.get('/api/schedule-versions', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -507,6 +562,7 @@ app.get('/api/schedule-versions', authenticateToken, async (req, res) => {
     client.release();
   }
 });
+
 app.post('/api/schedule-versions', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -515,10 +571,10 @@ app.post('/api/schedule-versions', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Level and sections are required.' });
     }
     const query = `
-            INSERT INTO schedule_versions (level, student_count, version_comment, sections)
-            VALUES ($1, $2, $3, $4)
-            RETURNING *
-        `;
+      INSERT INTO schedule_versions (level, student_count, version_comment, sections)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `;
     const result = await client.query(query, [level, student_count, version_comment, JSON.stringify(sections)]);
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -528,6 +584,7 @@ app.post('/api/schedule-versions', authenticateToken, async (req, res) => {
     client.release();
   }
 });
+
 app.patch('/api/schedule-versions/:id/activate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -551,9 +608,8 @@ app.patch('/api/schedule-versions/:id/activate', authenticateToken, async (req, 
   }
 });
 
-
 // ============================================
-// STATISTICS ROUTES
+// STATISTICS ROUTES (Updated)
 // ============================================
 app.get('/api/statistics', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -561,58 +617,65 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
     const studentsQuery = "SELECT COUNT(*) FROM users WHERE role = 'student'";
     const votesQuery = 'SELECT COUNT(*) FROM votes';
     const votingStudentsQuery = 'SELECT COUNT(DISTINCT student_id) FROM votes';
-    const [studentsResult, votesResult, votingStudentsResult] = await Promise.all([
+    // --- NEW: Query to count all comments ---
+    const commentsQuery = 'SELECT COUNT(*) FROM comments';
+
+    const [studentsResult, votesResult, votingStudentsResult, commentsResult] = await Promise.all([
       client.query(studentsQuery),
       client.query(votesQuery),
       client.query(votingStudentsQuery),
+      client.query(commentsQuery), // Execute the new query
     ]);
+
     const totalStudents = parseInt(studentsResult.rows[0].count, 10);
     const totalVotes = parseInt(votesResult.rows[0].count, 10);
     const votingStudents = parseInt(votingStudentsResult.rows[0].count, 10);
-    const participationRate =
-      totalStudents > 0 ? (votingStudents / totalStudents) * 100 : 0;
+    const totalComments = parseInt(commentsResult.rows[0].count, 10); // Get the live result
+
+    const participationRate = totalStudents > 0 ? (votingStudents / totalStudents) * 100 : 0;
+
     res.json({
       totalStudents,
       totalVotes,
       votingStudents,
+      totalComments, // --- NEW: Send the live total comments count ---
       participationRate: Number(participationRate).toFixed(1),
     });
   } catch (error) {
     console.error('Error fetching statistics:', error);
-    res.status(500).json({ error: 'خطأ في جلب الإحصائيات' });
+    res.status(500).json({ error: 'Failed to fetch statistics' });
   } finally {
     client.release();
   }
 });
-// ============================================
-// AI SCHEDULER ROUTE (NOW WITH RULES INTEGRATION)
-// ============================================
 
+// ============================================
+// AI SCHEDULER ROUTE
+// ============================================
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { level, currentLevel, currentSchedule, user_command } = req.body;
-    const scheduleLevel = level || currentLevel; // ✅ حتى لو أحدهم فاضي نستخدم الثاني
+    const scheduleLevel = level || currentLevel;
 
-
-    // --- الخطوة 1: جلب القواعد من قاعدة البيانات ---
     const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
-    const rules = rulesResult.rows.map(r => r.text); // مصفوفة نصوص القواعد
+    const rules = rulesResult.rows.map(r => r.text);
 
-    // --- الخطوة 2: جلب مواد SE المطلوبة ---
-    const seCoursesResult = await client.query(
-      'SELECT course_id, name, credit FROM courses WHERE level = $1 AND dept_code = $2',
-      [currentLevel, 'SE']
+    const coursesResult = await client.query(
+      `SELECT c.course_id, c.name, c.credit, c.dept_code 
+     FROM courses c
+     LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
+     WHERE (c.level = $1 AND c.dept_code = 'SE') OR (aebl.level = $1)`,
+      [currentLevel]
     );
-    const requiredSeCourses = seCoursesResult.rows;
+    const requiredCourses = coursesResult.rows;
 
-    if (requiredSeCourses.length === 0) {
+    if (requiredCourses.length === 0) {
       return res.status(404).json({
         error: `No Software Engineering courses found for level ${currentLevel}.`
       });
     }
 
-    // --- الخطوة 3: تحديد المواد الثابتة (غير SE) كأوقات مشغولة ---
     const fixedSections = currentSchedule.sections.filter(sec => sec.dept_code !== 'SE');
     const occupiedSlots = fixedSections.map(sec =>
       `${sec.day_code} from ${sec.start_time.substring(0, 5)} to ${sec.end_time.substring(0, 5)} for ${sec.dept_code}`
@@ -623,7 +686,6 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 
     const randomSeed = Math.random();
 
-    // --- الخطوة 4: بناء الطلب للذكاء الصناعي (Prompt) ---
     const systemInstruction = `
 You are a university academic scheduler AI.
 Your task is to schedule the provided list of Software Engineering (SE) courses into available slots,
@@ -638,13 +700,13 @@ You are a university academic scheduler AI.
 Each SE course must be scheduled according to its total credit hours, distributed across the available weekly time slots.
 
 📘 **Course Scheduling Rules:**
-1. Each course’s total scheduled hours must exactly equal its credit value.
+1. Each course's total scheduled hours must exactly equal its credit value.
 2. Split the credit hours intelligently across the week:
    - Prefer multiple shorter blocks (1-hour or 2-hour sessions) rather than long continuous sessions.
    - Avoid any 3-hour continuous sessions unless there is absolutely no alternative.
 3. Spread sessions across different days when possible (e.g., a 3-credit course could meet M/W/Th or S/T/W).
 4. Maintain realistic start and end times (08:00 to 15:00).
-5. No overlap between SE course sessions and the “occupied slots” listed below.
+5. No overlap between SE course sessions and the "occupied slots" listed below.
 6. Try to minimize idle gaps within the same day.
 7. Use only valid days: S, M, T, W, H.
 8. Each session must have "section_type": "LECTURE".
@@ -652,11 +714,11 @@ Each SE course must be scheduled according to its total credit hours, distribute
 💡 **Scheduling Philosophy:**
 Think like a human academic scheduler:
 - Maintain balance between mornings and afternoons.
-- Avoid scheduling the same course twice in the same day (unless it’s a 2-hour block).
+- Avoid scheduling the same course twice in the same day (unless it's a 2-hour block).
 - Distribute sessions fairly among available time slots.
 
 🧩 **Required SE Courses (with credit hours):**
-${JSON.stringify(requiredSeCourses.map(c => ({
+${JSON.stringify(requiredCourses.map(c => ({
       course_id: c.course_id,
       name: c.name,
       credit: c.credit,
@@ -729,7 +791,6 @@ Return only this JSON array, with no explanation text.
       throw new Error('AI did not return a valid schedule. Please check the server logs.');
     }
 
-    // --- الخطوة 5: تحويل استجابة AI إلى جدول نهائي ---
     const generatedSeSchedule = JSON.parse(jsonText);
 
     const correctedSeSchedule = generatedSeSchedule.map(section => ({
@@ -772,6 +833,7 @@ app.get('/api/rules', async (req, res) => {
     client.release();
   }
 });
+
 app.post('/api/rules', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -787,6 +849,7 @@ app.post('/api/rules', authenticateToken, async (req, res) => {
     client.release();
   }
 });
+
 app.delete('/api/rules/:ruleId', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -801,6 +864,126 @@ app.delete('/api/rules/:ruleId', authenticateToken, async (req, res) => {
     client.release();
   }
 });
+// ✅ رفع المستوى لمرة واحدة فقط
+app.put('/api/student/level-up/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+
+    // التحقق من المستوى الحالي
+    const studentRes = await client.query(
+      'SELECT level, has_leveled_up FROM students WHERE student_id=$1',
+      [id]
+    );
+
+    if (studentRes.rows.length === 0)
+      return res.status(404).json({ error: 'Student not found' });
+
+    const student = studentRes.rows[0];
+
+    // التحقق إذا سبق رفع المستوى من قبل
+    if (student.has_leveled_up) {
+      return res.status(400).json({ error: 'Level already increased once' });
+    }
+
+    // رفع المستوى وتحديث حالة has_leveled_up
+    const newLevel = student.level + 1;
+    await client.query(
+      'UPDATE students SET level=$1, has_leveled_up=true WHERE student_id=$2',
+      [newLevel, id]
+    );
+
+    res.json({ success: true, message: `Level updated to ${newLevel}` });
+  } catch (err) {
+    console.error('Level-up error:', err);
+    res.status(500).json({ error: 'Server error during level up' });
+  } finally {
+    client.release();
+  }
+});
+
+// ============================================
+// COMMENTS ROUTES (Correctly Ordered)
+// ============================================
+
+// --- This route handles POSTing a new comment ---
+app.post('/api/comments', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { student_id, schedule_version_id, comment } = req.body;
+    if (!student_id || !schedule_version_id || !comment) {
+      return res.status(400).json({ error: 'student_id, schedule_version_id, and comment are required.' });
+    }
+    const insertQuery = `INSERT INTO comments (student_id, schedule_version_id, comment) VALUES ($1, $2, $3) RETURNING *;`;
+    const result = await client.query(insertQuery, [student_id, schedule_version_id, comment]);
+    res.status(201).json({ success: true, message: 'Comment added successfully.', comment: result.rows[0] });
+  } catch (error) {
+    console.error('Error adding comment:', error);
+    res.status(500).json({ error: 'Failed to add comment. Check server logs for details.' });
+  } finally {
+    client.release();
+  }
+});
+
+// --- This route gets ALL comments for the admin dashboard ---
+// It is placed BEFORE the route with a parameter to avoid conflicts.
+app.get('/api/comments/all', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const query = `
+            SELECT 
+                c.id as comment_id, 
+                c.comment, 
+                c.created_at,
+                s.student_id,
+                s.level as student_level,
+                u.name as student_name,
+                sv.id as schedule_version_id,
+                sv.version_comment
+            FROM comments c
+            LEFT JOIN students s ON c.student_id = s.student_id
+            LEFT JOIN users u ON s.user_id = u.user_id
+            LEFT JOIN schedule_versions sv ON c.schedule_version_id = sv.id
+            ORDER BY c.created_at DESC;
+        `;
+    const result = await client.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching all comments:', error);
+    res.status(500).json({ error: 'Failed to fetch all comments.' });
+  } finally {
+    client.release();
+  }
+});
+
+// --- This route gets comments for a SPECIFIC schedule version ---
+// It is placed AFTER the '/all' route.
+app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { schedule_version_id } = req.params;
+    const query = `
+      SELECT c.id, c.comment, c.created_at, u.name AS student_name
+      FROM comments c
+      JOIN students s ON c.student_id = s.student_id
+      JOIN users u ON s.user_id = u.user_id
+      WHERE c.schedule_version_id = $1
+      ORDER BY c.created_at DESC
+    `;
+    const result = await client.query(query, [schedule_version_id]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching comments for schedule:', error);
+    res.status(500).json({ error: 'Failed to fetch comments.' });
+  } finally {
+    client.release();
+  }
+});
+
+
+
+
+
 
 // ============================================
 // HEALTH CHECK & FINAL MIDDLEWARE
