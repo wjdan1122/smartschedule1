@@ -35,7 +35,7 @@ const VotingResults = () => {
   const [allResults, setAllResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedLevel, setSelectedLevel] = useState('3'); // Default to level 3
+  const [selectedLevel, setSelectedLevel] = useState('3');
   const academicLevels = [3, 4, 5, 6, 7, 8];
 
   const fetchResults = useCallback(async () => {
@@ -43,33 +43,20 @@ const VotingResults = () => {
     setError(null);
     try {
       const data = await fetchData('http://localhost:5000/api/votes/results');
-      // Process the raw data from the server into a more usable format for the frontend
       const processedResults = {};
       data.forEach(row => {
         const { course_id, name, is_approved, student_level, vote_count } = row;
-
         if (!processedResults[course_id]) {
-          processedResults[course_id] = {
-            course_id,
-            name,
-            is_approved,
-            votes_by_level: {},
-            total_votes: 0
-          };
+          processedResults[course_id] = { course_id, name, is_approved, votes_by_level: {}, total_votes: 0 };
         }
-
         if (student_level && vote_count > 0) {
           processedResults[course_id].votes_by_level[student_level] = parseInt(vote_count);
         }
       });
-
-      // Calculate total votes for each course
       for (const courseId in processedResults) {
         processedResults[courseId].total_votes = Object.values(processedResults[courseId].votes_by_level).reduce((sum, count) => sum + count, 0);
       }
-
       setAllResults(Object.values(processedResults).sort((a, b) => b.total_votes - a.total_votes));
-
     } catch (err) {
       setError(err.message);
     } finally {
@@ -103,7 +90,6 @@ const VotingResults = () => {
       <h3 className="text-dark mb-4 d-flex align-items-center">
         <FaVoteYea className="me-2 text-primary" /> Elective Course Voting Results
       </h3>
-
       <Form.Group className="mb-4">
         <Form.Label className="fw-bold">Show Votes From Student Level:</Form.Label>
         <Form.Select value={selectedLevel} onChange={(e) => setSelectedLevel(e.target.value)}>
@@ -112,7 +98,6 @@ const VotingResults = () => {
           ))}
         </Form.Select>
       </Form.Group>
-
       {allResults.filter(course => course.votes_by_level[selectedLevel]).length === 0 ? (
         <p className="text-muted mt-3">No voting results available for the selected student level.</p>
       ) : (
@@ -121,12 +106,8 @@ const VotingResults = () => {
             <ListGroup.Item key={course.course_id} className="d-flex justify-content-between align-items-center mb-2">
               <div>
                 <span className="fw-bold">{course.name}</span>
-                <Badge bg="primary" className="ms-3">
-                  {course.votes_by_level[selectedLevel] || 0} votes
-                </Badge>
-                <Badge bg="secondary" className="ms-1" pill>
-                  Total: {course.total_votes}
-                </Badge>
+                <Badge bg="primary" className="ms-3">{course.votes_by_level[selectedLevel] || 0} votes</Badge>
+                <Badge bg="secondary" className="ms-1" pill>Total: {course.total_votes}</Badge>
               </div>
               <Button size="sm" variant="outline-success" onClick={() => handleApprove(course.course_id)}>
                 Approve for a Level...
@@ -138,6 +119,7 @@ const VotingResults = () => {
     </section>
   );
 };
+
 
 // --- Main Dashboard Component ---
 const Dashboard = () => {
@@ -200,6 +182,8 @@ const Dashboard = () => {
               <Nav.Link onClick={() => navigate('/manageSchedules')} className="nav-link-custom"><FaCalendarAlt className="me-2" /> Schedules</Nav.Link>
               <Nav.Link onClick={() => navigate('/managestudents')} className="nav-link-custom"><FaUsers className="me-2" /> Students</Nav.Link>
               <Nav.Link onClick={() => navigate('/managerules')} className="nav-link-custom"><FaBalanceScale className="me-2" /> Rules</Nav.Link>
+              {/* ✅✅✅ THE FIX IS HERE: ADDED THE MISSING LINK ✅✅✅ */}
+              <Nav.Link onClick={() => navigate('/managenotifications')} className="nav-link-custom"><FaBell className="me-2" /> Comments</Nav.Link>
             </Nav>
             <div className="d-flex align-items-center ms-lg-4 mt-3 mt-lg-0">
               <div className="text-white text-start me-3">
