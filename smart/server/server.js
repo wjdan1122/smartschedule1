@@ -1,4 +1,5 @@
-console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE ✅✅✅");// smart3/smart/server/server.js
+console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE ✅✅✅");
+// smart3/smart/server/server.js
 console.log("👉 Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -74,6 +75,7 @@ const verifyCommittee = (req, res, next) => {
   }
   next();
 };
+
 // ============================================
 // AUTHENTICATION ROUTES
 // ============================================
@@ -184,6 +186,80 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// ✅ Register new user (faculty/staff) - RESTORED
+app.post('/api/auth/register-user', verifyCommittee, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { email, password, name, role } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const query = `
+      INSERT INTO users (email, password, name, role)
+      VALUES ($1, $2, $3, $4)
+      RETURNING user_id, email, name, role
+    `;
+    const result = await client.query(query, [
+      email,
+      hashedPassword,
+      name,
+      role,
+    ]);
+    res.json({ success: true, message: 'تمت إضافة المستخدم بنجاح!', user: result.rows[0] });
+  } catch (error) {
+    console.error('Error creating user:', error);
+    if (error.code === '23505') {
+      res.status(400).json({ error: 'البريد الإلكتروني مستخدم بالفعل' });
+    } else {
+      res.status(500).json({ error: 'خطأ في إضافة المستخدم' });
+    }
+  } finally {
+    client.release();
+  }
+});
+
+// ✅ Register new student - RESTORED
+app.post('/api/auth/register-student', verifyCommittee, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { email, password, name, level, is_ir } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const userQuery = `
+      INSERT INTO users (email, password, name, role)
+      VALUES ($1, $2, $3, 'student')
+      RETURNING user_id
+    `;
+    const userResult = await client.query(userQuery, [email, hashedPassword, name]);
+    const userId = userResult.rows[0].user_id;
+    const studentQuery = `
+      INSERT INTO students (user_id, level, is_ir)
+      VALUES ($1, $2, $3)
+      RETURNING student_id
+    `;
+    const studentResult = await client.query(studentQuery, [
+      userId,
+      level,
+      is_ir || false,
+    ]);
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      message: 'تمت إضافة الطالب بنجاح!',
+      studentId: studentResult.rows[0].student_id,
+      userId,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => { });
+    console.error('Error creating student:', error);
+    if (error.code === '23505') {
+      res.status(400).json({ error: 'البريد الإلكتروني مستخدم بالفعل' });
+    } else {
+      res.status(500).json({ error: 'خطأ في إضافة الطالب' });
+    }
+  } finally {
+    client.release();
+  }
+});
+
 // ============================================
 // STUDENT ROUTES
 // ============================================
@@ -191,7 +267,7 @@ app.post('/api/auth/login', async (req, res) => {
 // Get the active schedule for a specific level (for StudentDashboard)
 app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
   const client = await pool.connect();
-  console.log(`--- [ DIAGNOSTIC ] --- Hit route for level: ${req.params.level}`); // <-- سجل جديد
+  console.log(`--- [ DIAGNOSTIC ] --- Hit route for level: ${req.params.level}`);
   try {
     const { level } = req.params;
 
@@ -199,16 +275,14 @@ app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
     const scheduleResult = await client.query(scheduleQuery, [level]);
 
     if (scheduleResult.rows.length === 0) {
-      console.log(`--- [ DIAGNOSTIC ] --- No active schedule found for level ${level}.`); // <-- سجل جديد
+      console.log(`--- [ DIAGNOSTIC ] --- No active schedule found for level ${level}.`);
       return res.status(404).json({ message: `No active schedule found for level ${level}.` });
     }
 
     const activeSchedule = scheduleResult.rows[0];
 
-    // --- أهم خطوة تشخيصية ---
-    // سنقوم بطباعة البيانات قبل محاولة إرسالها
-    console.log('--- [ DIAGNOSTIC ] --- Found schedule. Data BEFORE sending:'); // <-- سجل جديد
-    console.log(activeSchedule); // <-- سجل جديد
+    console.log('--- [ DIAGNOSTIC ] --- Found schedule. Data BEFORE sending:');
+    console.log(activeSchedule);
 
     res.json({
       schedule: activeSchedule,
@@ -216,14 +290,14 @@ app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    // إذا انهار السيرفر، سيتم طباعة الخطأ هنا
-    console.error('--- [ DIAGNOSTIC ] --- CRASH DETECTED IN ROUTE:'); // <-- سجل جديد
-    console.error(error); // <-- سجل جديد
+    console.error('--- [ DIAGNOSTIC ] --- CRASH DETECTED IN ROUTE:');
+    console.error(error);
     res.status(500).json({ message: 'Failed to fetch schedule data due to a server crash.' });
   } finally {
     client.release();
   }
 });
+
 // Get a single student's full details (can be used in profiles)
 app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -310,6 +384,44 @@ app.delete('/api/students/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// ✅ رفع المستوى لمرة واحدة فقط
+app.put('/api/student/level-up/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+
+    // التحقق من المستوى الحالي
+    const studentRes = await client.query(
+      'SELECT level, has_leveled_up FROM students WHERE student_id=$1',
+      [id]
+    );
+
+    if (studentRes.rows.length === 0)
+      return res.status(404).json({ error: 'Student not found' });
+
+    const student = studentRes.rows[0];
+
+    // التحقق إذا سبق رفع المستوى من قبل
+    if (student.has_leveled_up) {
+      return res.status(400).json({ error: 'Level already increased once' });
+    }
+
+    // رفع المستوى وتحديث حالة has_leveled_up
+    const newLevel = student.level + 1;
+    await client.query(
+      'UPDATE students SET level=$1, has_leveled_up=true WHERE student_id=$2',
+      [newLevel, id]
+    );
+
+    res.json({ success: true, message: `Level updated to ${newLevel}` });
+  } catch (err) {
+    console.error('Level-up error:', err);
+    res.status(500).json({ error: 'Server error during level up' });
+  } finally {
+    client.release();
+  }
+});
+
 // ============================================
 // COURSE ROUTES
 // ============================================
@@ -378,6 +490,7 @@ app.post('/api/courses', verifyCommittee, async (req, res) => {
     client.release();
   }
 });
+
 // ============================================
 // VOTING & APPROVAL ROUTES
 // ============================================
@@ -411,7 +524,7 @@ app.get('/api/votes/student/:student_id', authenticateToken, async (req, res) =>
     const { student_id } = req.params;
     const query = 'SELECT course_id, vote_value FROM votes WHERE student_id = $1';
     const result = await client.query(query, [student_id]);
-    res.json(result.rows); // Will return an empty array if no votes exist
+    res.json(result.rows);
   } catch (error) {
     console.error('Error fetching student votes:', error);
     res.status(500).json({ error: 'Failed to fetch student votes.' });
@@ -420,11 +533,9 @@ app.get('/api/votes/student/:student_id', authenticateToken, async (req, res) =>
   }
 });
 
-
 app.get('/api/votes/results', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    // This query fetches all elective courses and provides a breakdown of votes by student level
     const query = `
             SELECT
                 c.course_id,
@@ -477,8 +588,6 @@ app.post('/api/electives/approve', authenticateToken, async (req, res) => {
     client.release();
   }
 });
-
-
 
 // ============================================
 // SCHEDULE ROUTES
@@ -617,20 +726,19 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
     const studentsQuery = "SELECT COUNT(*) FROM users WHERE role = 'student'";
     const votesQuery = 'SELECT COUNT(*) FROM votes';
     const votingStudentsQuery = 'SELECT COUNT(DISTINCT student_id) FROM votes';
-    // --- NEW: Query to count all comments ---
     const commentsQuery = 'SELECT COUNT(*) FROM comments';
 
     const [studentsResult, votesResult, votingStudentsResult, commentsResult] = await Promise.all([
       client.query(studentsQuery),
       client.query(votesQuery),
       client.query(votingStudentsQuery),
-      client.query(commentsQuery), // Execute the new query
+      client.query(commentsQuery),
     ]);
 
     const totalStudents = parseInt(studentsResult.rows[0].count, 10);
     const totalVotes = parseInt(votesResult.rows[0].count, 10);
     const votingStudents = parseInt(votingStudentsResult.rows[0].count, 10);
-    const totalComments = parseInt(commentsResult.rows[0].count, 10); // Get the live result
+    const totalComments = parseInt(commentsResult.rows[0].count, 10);
 
     const participationRate = totalStudents > 0 ? (votingStudents / totalStudents) * 100 : 0;
 
@@ -638,7 +746,7 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
       totalStudents,
       totalVotes,
       votingStudents,
-      totalComments, // --- NEW: Send the live total comments count ---
+      totalComments,
       participationRate: Number(participationRate).toFixed(1),
     });
   } catch (error) {
@@ -864,43 +972,6 @@ app.delete('/api/rules/:ruleId', authenticateToken, async (req, res) => {
     client.release();
   }
 });
-// ✅ رفع المستوى لمرة واحدة فقط
-app.put('/api/student/level-up/:id', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { id } = req.params;
-
-    // التحقق من المستوى الحالي
-    const studentRes = await client.query(
-      'SELECT level, has_leveled_up FROM students WHERE student_id=$1',
-      [id]
-    );
-
-    if (studentRes.rows.length === 0)
-      return res.status(404).json({ error: 'Student not found' });
-
-    const student = studentRes.rows[0];
-
-    // التحقق إذا سبق رفع المستوى من قبل
-    if (student.has_leveled_up) {
-      return res.status(400).json({ error: 'Level already increased once' });
-    }
-
-    // رفع المستوى وتحديث حالة has_leveled_up
-    const newLevel = student.level + 1;
-    await client.query(
-      'UPDATE students SET level=$1, has_leveled_up=true WHERE student_id=$2',
-      [newLevel, id]
-    );
-
-    res.json({ success: true, message: `Level updated to ${newLevel}` });
-  } catch (err) {
-    console.error('Level-up error:', err);
-    res.status(500).json({ error: 'Server error during level up' });
-  } finally {
-    client.release();
-  }
-});
 
 // ============================================
 // COMMENTS ROUTES (Correctly Ordered)
@@ -926,7 +997,6 @@ app.post('/api/comments', authenticateToken, async (req, res) => {
 });
 
 // --- This route gets ALL comments for the admin dashboard ---
-// It is placed BEFORE the route with a parameter to avoid conflicts.
 app.get('/api/comments/all', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -957,7 +1027,6 @@ app.get('/api/comments/all', authenticateToken, async (req, res) => {
 });
 
 // --- This route gets comments for a SPECIFIC schedule version ---
-// It is placed AFTER the '/all' route.
 app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -979,11 +1048,6 @@ app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res
     client.release();
   }
 });
-
-
-
-
-
 
 // ============================================
 // HEALTH CHECK & FINAL MIDDLEWARE
