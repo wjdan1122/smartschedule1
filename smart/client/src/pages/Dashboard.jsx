@@ -33,6 +33,7 @@ const NotificationItem = ({ notification }) => (
 // --- Self-Contained Voting Results Component ---
 const VotingResults = () => {
   const [allResults, setAllResults] = useState([]);
+  const [approvedByLevel, setApprovedByLevel] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedLevel, setSelectedLevel] = useState('3');
@@ -47,7 +48,10 @@ const VotingResults = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchData('http://localhost:5000/api/votes/results');
+      const [data, approvedList] = await Promise.all([
+        fetchData('http://localhost:5000/api/votes/results'),
+        fetchData('http://localhost:5000/api/electives/approved')
+      ]);
       const processedResults = {};
       data.forEach(row => {
         const { course_id, name, is_approved, student_level, vote_count } = row;
@@ -62,6 +66,14 @@ const VotingResults = () => {
         processedResults[courseId].total_votes = Object.values(processedResults[courseId].votes_by_level).reduce((sum, count) => sum + count, 0);
       }
       setAllResults(Object.values(processedResults).sort((a, b) => b.total_votes - a.total_votes));
+
+      const approvalMap = approvedList.reduce((acc, item) => {
+        const levelKey = String(item.level);
+        if (!acc[levelKey]) acc[levelKey] = [];
+        acc[levelKey].push(item.course_id);
+        return acc;
+      }, {});
+      setApprovedByLevel(approvalMap);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -69,7 +81,7 @@ const VotingResults = () => {
     }
   }, []);
 
-  const autoIntegrateApprovedCourse = useCallback(async (courseId, level) => {
+  const autoUpdateScheduleForElective = useCallback(async (courseId, level, action = 'approve') => {
     const levelNumber = parseInt(level, 10);
     if (!levelNumber) {
       setIntegrationStatus({
@@ -116,20 +128,24 @@ const VotingResults = () => {
         sections: groupOneSections
       };
 
+      const baseCommand = action === 'approve'
+        ? `Integrate the newly approved elective course ${courseId} into the Level ${levelNumber} Software Engineering schedule while keeping existing non-SE sessions fixed.`
+        : `Remove the elective course ${courseId} from the Level ${levelNumber} Software Engineering schedule, then rebalance the remaining SE sessions while keeping existing non-SE sessions fixed.`;
+
       const aiResponse = await fetchData('http://localhost:5000/api/schedule/generate', 'POST', {
         currentLevel: levelNumber,
         currentSchedule,
-        user_command: `Integrate the newly approved elective course ${courseId} into the Level ${levelNumber} Software Engineering schedule while keeping existing non-SE sessions fixed.`
+        user_command: baseCommand
       });
 
       if (!aiResponse?.schedule) {
-        throw new Error('AI schedule could not be generated for the approved course.');
+        throw new Error('AI schedule could not be generated for the requested update.');
       }
 
       const savedVersion = await fetchData('http://localhost:5000/api/schedule-versions', 'POST', {
         level: levelNumber,
         student_count: activeVersion?.student_count || 25,
-        version_comment: `Auto AI update after approving course ${courseId} on ${new Date().toLocaleDateString()}`,
+        version_comment: `Auto AI update after ${action === 'approve' ? 'approving' : 'removing'} course ${courseId} on ${new Date().toLocaleDateString()}`,
         sections: aiResponse.schedule
       });
 
@@ -139,7 +155,9 @@ const VotingResults = () => {
 
       setIntegrationStatus({
         loading: false,
-        success: `AI schedule updated for Level ${levelNumber}.`,
+        success: action === 'approve'
+          ? `AI schedule updated for Level ${levelNumber}.`
+          : `AI schedule refreshed after removing course ${courseId} from Level ${levelNumber}.`,
         error: ''
       });
     } catch (integrationError) {
@@ -168,10 +186,37 @@ const VotingResults = () => {
         level: levelNumber
       });
       alert(`Course approved for Level ${level}.`);
-      await autoIntegrateApprovedCourse(courseId, levelNumber);
+      await autoUpdateScheduleForElective(courseId, levelNumber, 'approve');
       fetchResults();
     } catch (err) {
       alert(`Failed to approve: ${err.message}`);
+      setIntegrationStatus({
+        loading: false,
+        success: '',
+        error: err.message
+      });
+    }
+  };
+
+  const handleUnapprove = async (courseId) => {
+    const levelNumber = parseInt(selectedLevel, 10);
+    if (!levelNumber) {
+      alert('Invalid level selected.');
+      return;
+    }
+    const confirmRemoval = window.confirm('Remove this elective from the schedule for the selected level?');
+    if (!confirmRemoval) return;
+
+    try {
+      await fetchData('http://localhost:5000/api/electives/approve', 'DELETE', {
+        course_id: courseId,
+        level: levelNumber
+      });
+      alert(`Course removed from Level ${levelNumber}.`);
+      await autoUpdateScheduleForElective(courseId, levelNumber, 'remove');
+      fetchResults();
+    } catch (err) {
+      alert(`Failed to remove course: ${err.message}`);
       setIntegrationStatus({
         loading: false,
         success: '',
@@ -208,28 +253,71 @@ const VotingResults = () => {
           ))}
         </Form.Select>
       </Form.Group>
-      {allResults.filter(course => course.votes_by_level[selectedLevel]).length === 0 ? (
-        <p className="text-muted mt-3">No voting results available for the selected student level.</p>
-      ) : (
-        <ListGroup>
-          {allResults.filter(course => course.votes_by_level[selectedLevel]).map(course => (
-            <ListGroup.Item key={course.course_id} className="d-flex justify-content-between align-items-center mb-2">
-              <div>
-                <span className="fw-bold">{course.name}</span>
-                <Badge bg="primary" className="ms-3">{course.votes_by_level[selectedLevel] || 0} votes</Badge>
-                <Badge bg="secondary" className="ms-1" pill>Total: {course.total_votes}</Badge>
-              </div>
-              <Button size="sm" variant="outline-success" onClick={() => handleApprove(course.course_id)}>
-                Approve for a Level...
-              </Button>
-            </ListGroup.Item>
-          ))}
-        </ListGroup>
-      )}
+      {(() => {
+        const filteredCourses = allResults.filter(course =>
+          course.votes_by_level[selectedLevel] ||
+          (approvedByLevel[selectedLevel] && approvedByLevel[selectedLevel].includes(course.course_id))
+        );
+        if (filteredCourses.length === 0) {
+          return <p className="text-muted mt-3">No voting results available for the selected student level.</p>;
+        }
+        return (
+          <ListGroup>
+            {filteredCourses.map(course => {
+              const levelsForCourse = Object.keys(approvedByLevel).filter(
+                levelKey => (approvedByLevel[levelKey] || []).includes(course.course_id)
+              );
+              const isApprovedForSelectedLevel = levelsForCourse.includes(selectedLevel);
+
+              return (
+                <ListGroup.Item key={course.course_id} className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-2">
+                  <div>
+                    <span className="fw-bold">{course.name}</span>
+                    <Badge bg="primary" className="ms-3">
+                      {course.votes_by_level[selectedLevel] || 0} votes
+                    </Badge>
+                    <Badge bg="secondary" className="ms-1" pill>Total: {course.total_votes}</Badge>
+                    {levelsForCourse.length > 0 && (
+                      <div className="text-muted small mt-1">
+                        Approved levels: {levelsForCourse.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    {isApprovedForSelectedLevel && (
+                      <Badge bg="success" className="px-2 py-1">Selected for Level {selectedLevel}</Badge>
+                    )}
+                    {isApprovedForSelectedLevel ? (
+                      <Button
+                        size="sm"
+                        variant="outline-danger"
+                        className="px-3"
+                        onClick={() => handleUnapprove(course.course_id)}
+                        disabled={integrationStatus.loading}
+                      >
+                        Cancel Selection
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline-success"
+                        className="px-3"
+                        onClick={() => handleApprove(course.course_id)}
+                        disabled={integrationStatus.loading}
+                      >
+                        Approve for a Level...
+                      </Button>
+                    )}
+                  </div>
+                </ListGroup.Item>
+              );
+            })}
+          </ListGroup>
+        );
+      })()}
     </section>
   );
 };
-
 
 // --- Main Dashboard Component ---
 const Dashboard = () => {

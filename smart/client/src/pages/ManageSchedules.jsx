@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Alert, Spinner, Table, Form, ListGroup, Badge } from 'react-bootstrap';
-import { FaArrowRight, FaFilter, FaCalendarAlt, FaSyncAlt, FaSave, FaCheckCircle, FaEdit } from 'react-icons/fa';
+import { FaArrowRight, FaFilter, FaCalendarAlt, FaSyncAlt, FaSave, FaCheckCircle, FaEdit, FaTrash } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import '../App.css';
 
@@ -263,20 +263,81 @@ const ManageSchedules = () => {
         setIsSaving(scheduleToSave.id);
         setError(null);
         try {
+            const suggestedName = (comment && comment.trim())
+                ? comment.trim()
+                : `Group ${scheduleToSave.id} - ${new Date().toLocaleDateString()}`;
+            const versionName = window.prompt('Enter a name for this saved version:', suggestedName);
+            if (versionName === null) {
+                setIsSaving(null);
+                return;
+            }
+            const trimmedName = versionName.trim();
+            if (!trimmedName) {
+                alert('Version name cannot be empty.');
+                setIsSaving(null);
+                return;
+            }
+
             await fetchData('http://localhost:5000/api/schedule-versions', {
                 method: 'POST',
                 body: JSON.stringify({
                     level: currentLevel,
                     student_count: studentCount,
-                    version_comment: comment || `Saved version for Group ${scheduleToSave.id} on ${new Date().toLocaleDateString()}`,
+                    version_comment: trimmedName,
                     sections: scheduleToSave.sections
                 })
             });
-            fetchAllData();
+            await fetchAllData();
+            alert('Version saved successfully.');
         } catch (err) {
             setError(err.message);
         } finally {
             setIsSaving(null);
+        }
+    };
+
+    const handleRenameVersion = async (version) => {
+        setError(null);
+        const currentName = version.version_comment || '';
+        const newName = window.prompt('Enter a new name for this version:', currentName);
+        if (newName === null) {
+            return;
+        }
+        const trimmedName = newName.trim();
+        if (!trimmedName) {
+            alert('Version name cannot be empty.');
+            return;
+        }
+        try {
+            await fetchData(`http://localhost:5000/api/schedule-versions/${version.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ version_comment: trimmedName })
+            });
+            await fetchAllData();
+            alert('Version renamed successfully.');
+        } catch (err) {
+            setError(err.message);
+        }
+    };
+
+    const handleDeleteVersion = async (version) => {
+        setError(null);
+        if (version.is_active) {
+            alert('Cannot delete an active version. Please activate another version first.');
+            return;
+        }
+        const confirmDelete = window.confirm('Are you sure you want to delete this saved version?');
+        if (!confirmDelete) {
+            return;
+        }
+        try {
+            await fetchData(`http://localhost:5000/api/schedule-versions/${version.id}`, {
+                method: 'DELETE'
+            });
+            await fetchAllData();
+            alert('Version deleted successfully.');
+        } catch (err) {
+            setError(err.message);
         }
     };
 
@@ -346,18 +407,35 @@ const ManageSchedules = () => {
                                 {loading ? <div className="text-center"><Spinner size="sm" /></div> : savedVersions.length > 0 ? (
                                     <ListGroup variant="flush">
                                         {savedVersions.map(version => (
-                                            <ListGroup.Item key={version.id} className="d-flex justify-content-between align-items-center">
+                                            <ListGroup.Item key={version.id} className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
                                                 <div>
-                                                    <p className="fw-bold mb-1">{version.version_comment || "No comment"}</p>
+                                                    <p className="fw-bold mb-1">{version.version_comment || "No name"}</p>
                                                     <small className="text-muted">
                                                         {new Date(version.created_at).toLocaleString()}
                                                     </small>
                                                 </div>
-                                                {version.is_active ? (
-                                                    <Badge bg="success"><FaCheckCircle className="me-1" /> Active</Badge>
-                                                ) : (
-                                                    <Button variant="outline-success" size="sm" onClick={() => handleActivateVersion(version.id)}>Activate</Button>
-                                                )}
+                                                <div className="d-flex align-items-center gap-2 flex-wrap">
+                                                    <Button variant="outline-primary" size="sm" className="px-2 py-1" onClick={() => handleRenameVersion(version)}>
+                                                        <FaEdit className="me-1" /> Rename
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline-danger"
+                                                        size="sm"
+                                                        className="px-2 py-1"
+                                                        onClick={() => handleDeleteVersion(version)}
+                                                        disabled={version.is_active}
+                                                        title={version.is_active ? 'Deactivate this version before deleting.' : ''}
+                                                    >
+                                                        <FaTrash className="me-1" /> Delete
+                                                    </Button>
+                                                    {version.is_active ? (
+                                                        <Badge bg="success" className="px-3 py-2"><FaCheckCircle className="me-1" /> Active</Badge>
+                                                    ) : (
+                                                        <Button variant="outline-success" size="sm" className="px-2 py-1" onClick={() => handleActivateVersion(version.id)}>
+                                                            Activate
+                                                        </Button>
+                                                    )}
+                                                </div>
                                             </ListGroup.Item>
                                         ))}
                                     </ListGroup>

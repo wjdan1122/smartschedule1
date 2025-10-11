@@ -567,6 +567,24 @@ app.get('/api/votes/results', authenticateToken, async (req, res) => {
 });
 
 // --- Approve an elective course FOR A SPECIFIC LEVEL ---
+app.get('/api/electives/approved', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const query = `
+      SELECT course_id, level
+      FROM approved_electives_by_level
+      ORDER BY level, course_id
+    `;
+    const result = await client.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching approved electives by level:', error);
+    res.status(500).json({ error: 'Failed to fetch approved electives.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.post('/api/electives/approve', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -574,16 +592,62 @@ app.post('/api/electives/approve', authenticateToken, async (req, res) => {
     if (!course_id || !level) {
       return res.status(400).json({ error: 'Course ID and Level are required.' });
     }
-    const query = `
+
+    await client.query('BEGIN');
+
+    const insertQuery = `
             INSERT INTO approved_electives_by_level (course_id, level) 
             VALUES ($1, $2)
             ON CONFLICT (course_id, level) DO NOTHING;
         `;
-    await client.query(query, [course_id, level]);
+    await client.query(insertQuery, [course_id, level]);
+    await client.query('UPDATE courses SET is_approved = true WHERE course_id = $1', [course_id]);
+
+    await client.query('COMMIT');
     res.json({ success: true, message: `Course ${course_id} approved for Level ${level}.` });
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Error approving course for level:', error);
     res.status(500).json({ error: 'Failed to approve course.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/electives/approve', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { course_id, level } = req.body;
+    if (!course_id || !level) {
+      return res.status(400).json({ error: 'Course ID and Level are required.' });
+    }
+
+    await client.query('BEGIN');
+
+    const deleteResult = await client.query(
+      'DELETE FROM approved_electives_by_level WHERE course_id = $1 AND level = $2 RETURNING *',
+      [course_id, level]
+    );
+
+    if (deleteResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Approved course record not found for the specified level.' });
+    }
+
+    const remaining = await client.query(
+      'SELECT 1 FROM approved_electives_by_level WHERE course_id = $1 LIMIT 1',
+      [course_id]
+    );
+    if (remaining.rows.length === 0) {
+      await client.query('UPDATE courses SET is_approved = false WHERE course_id = $1', [course_id]);
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: `Course ${course_id} removed from Level ${level}.` });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Error removing approved course level:', error);
+    res.status(500).json({ error: 'Failed to remove approved course.' });
   } finally {
     client.release();
   }
@@ -689,6 +753,37 @@ app.post('/api/schedule-versions', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error saving schedule version:', error);
     res.status(500).json({ message: 'Failed to save schedule version.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/schedule-versions/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { version_comment } = req.body;
+
+    if (!version_comment || !version_comment.trim()) {
+      return res.status(400).json({ message: 'Version name is required.' });
+    }
+
+    const query = `
+      UPDATE schedule_versions
+      SET version_comment = $1
+      WHERE id = $2
+      RETURNING *
+    `;
+    const result = await client.query(query, [version_comment.trim(), id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Schedule version not found.' });
+    }
+
+    res.json({ success: true, version: result.rows[0] });
+  } catch (error) {
+    console.error('Error renaming schedule version:', error);
+    res.status(500).json({ message: 'Failed to rename schedule version.' });
   } finally {
     client.release();
   }
@@ -968,6 +1063,30 @@ app.delete('/api/rules/:ruleId', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error deleting rule:', error);
     res.status(500).json({ error: 'Failed to delete rule.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/schedule-versions/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const versionResult = await client.query('SELECT is_active FROM schedule_versions WHERE id = $1', [id]);
+
+    if (versionResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Schedule version not found.' });
+    }
+
+    if (versionResult.rows[0].is_active) {
+      return res.status(400).json({ message: 'Cannot delete an active version. Activate another version first.' });
+    }
+
+    await client.query('DELETE FROM schedule_versions WHERE id = $1', [id]);
+    res.json({ success: true, message: 'Schedule version deleted.' });
+  } catch (error) {
+    console.error('Error deleting schedule version:', error);
+    res.status(500).json({ message: 'Failed to delete schedule version.' });
   } finally {
     client.release();
   }
