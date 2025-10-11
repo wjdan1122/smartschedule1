@@ -175,17 +175,16 @@ const VotingResults = () => {
   }, [fetchResults]);
 
   const handleApprove = async (courseId) => {
-    const level = prompt("Please enter the academic level to add this course to (e.g., 5, 6, 7):");
-    if (!level || Number.isNaN(parseInt(level, 10))) {
-      return alert("Invalid level. Please enter a number.");
+    const levelNumber = parseInt(selectedLevel, 10);
+    if (!levelNumber) {
+      return alert('Please select a valid level from the dropdown before approving.');
     }
     try {
-      const levelNumber = parseInt(level, 10);
       await fetchData('http://localhost:5000/api/electives/approve', 'POST', {
         course_id: courseId,
         level: levelNumber
       });
-      alert(`Course approved for Level ${level}.`);
+      alert(`Course approved for Level ${levelNumber}.`);
       await autoUpdateScheduleForElective(courseId, levelNumber, 'approve');
       fetchResults();
     } catch (err) {
@@ -252,6 +251,9 @@ const VotingResults = () => {
             <option key={level} value={level}>Level {level}</option>
           ))}
         </Form.Select>
+        <Form.Text className="text-muted">
+          Select a level, then use the buttons below to add or remove multiple electives for that level.
+        </Form.Text>
       </Form.Group>
       {(() => {
         const filteredCourses = allResults.filter(course =>
