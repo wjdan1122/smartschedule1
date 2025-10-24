@@ -329,6 +329,17 @@ const Dashboard = () => {
   const [statsError, setStatsError] = useState(null);
   const navigate = useNavigate();
 
+  // Redirect committee users to their dedicated page
+  React.useEffect(() => {
+    try {
+      const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+      const role = String(storedUser.role || '').toLowerCase();
+      if (role.includes('committee')) {
+        navigate('/load-committee', { replace: true });
+      }
+    } catch {}
+  }, [navigate]);
+
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     setStatsError(null);
@@ -384,6 +395,9 @@ const Dashboard = () => {
               <Nav.Link onClick={() => navigate('/managerules')} className="nav-link-custom"><FaBalanceScale className="me-2" /> Rules</Nav.Link>
               {/* ✅✅✅ THE FIX IS HERE: ADDED THE MISSING LINK ✅✅✅ */}
               <Nav.Link onClick={() => navigate('/managenotifications')} className="nav-link-custom"><FaBell className="me-2" /> Comments</Nav.Link>
+              {String(userInfo.role || '').toLowerCase().includes('committee') && (
+                <Nav.Link onClick={() => navigate('/load-committee')} className="nav-link-custom"><FaCheckCircle className="me-2" /> Load Committee</Nav.Link>
+              )}
             </Nav>
             <div className="d-flex align-items-center ms-lg-4 mt-3 mt-lg-0">
               <div className="text-white text-start me-3">

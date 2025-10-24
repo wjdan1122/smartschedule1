@@ -32,56 +32,19 @@ function Login() {
 
     try {
       const response = await authAPI.login(email, password);
-      console.log('Full login response:', response.data);
-
-      const token = response.data?.token;
-      const user = response.data?.user;
-
-      if (!token || !user) {
-        throw new Error('Invalid login response from server');
-      }
-
-      // Backend returns the correct structure
-      const userToStore = {
-        user_id: user.user_id,
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        level: user.level,
-        is_ir: user.is_ir,
-        type: user.type
-      };
-
-      console.log('✅ User to store:', userToStore);
-
-      // Save token and user to localStorage
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(userToStore));
-
-      // Verify saved values
-      const savedUser = JSON.parse(localStorage.getItem('user'));
-      console.log('✅ Saved user to localStorage:', savedUser);
-
-      // Navigate based on user role/type
-      if (userToStore.type === 'student' || userToStore.role === 'student') {
-        navigate('/student-dashboard');
-      } else {
-        navigate('/dashboard');
-      }
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+      navigate('/dashboard');
     } catch (err) {
       console.error('Login error:', err);
-      setError(err.response?.data?.error || err.message || 'Login failed. Please check your credentials.');
+      setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div
-      className="min-vh-100 d-flex align-items-center"
-      style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
-    >
+    <div className="min-vh-100 d-flex align-items-center" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
       <Container>
         <Row className="justify-content-center">
           <Col md={6} lg={5}>
@@ -128,7 +91,6 @@ function Login() {
                       'Login to Dashboard'
                     )}
                   </Button>
-
                   <div className="text-center mt-3">
                     <span className="text-muted">Don't have an account? </span>
                     <Button

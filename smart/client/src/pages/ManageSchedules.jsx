@@ -160,6 +160,7 @@ const ManageSchedules = () => {
     const [isSaving, setIsSaving] = useState(null);
     const [studentCount, setStudentCount] = useState(25);
     const [savedVersions, setSavedVersions] = useState([]);
+    const [sendingId, setSendingId] = useState(null);
 
     const fetchAllData = useCallback(async () => {
         setLoading(true);
@@ -350,6 +351,23 @@ const ManageSchedules = () => {
         }
     };
 
+    const handleSendToCommittee = async (version) => {
+        setSendingId(version.id);
+        try {
+            await fetchData(`http://localhost:5000/api/schedule-versions/${version.id}/scheduler-approve`, {
+                method: 'PATCH',
+                body: JSON.stringify({ approved: true })
+            });
+            await fetchAllData();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSendingId(null);
+        }
+    };
+
+    // Removed student comments viewer per request
+
     return (
         <div className="min-h-screen bg-light">
             <Container fluid="lg" className="py-4">
@@ -413,8 +431,13 @@ const ManageSchedules = () => {
                                                     <small className="text-muted">
                                                         {new Date(version.created_at).toLocaleString()}
                                                     </small>
+                                                    {version.committee_comment && (
+                                                        <div className="mt-2"><Badge bg="info">Committee Note</Badge> <span className="text-muted">{version.committee_comment}</span></div>
+                                                    )}
                                                 </div>
                                                 <div className="d-flex align-items-center gap-2 flex-wrap">
+                                                    {version.scheduler_approved && <Badge bg="secondary">Sent to Committee</Badge>}
+                                                    {version.committee_approved && <Badge bg="primary">Committee Approved</Badge>}
                                                     <Button variant="outline-primary" size="sm" className="px-2 py-1" onClick={() => handleRenameVersion(version)}>
                                                         <FaEdit className="me-1" /> Rename
                                                     </Button>
@@ -435,9 +458,20 @@ const ManageSchedules = () => {
                                                             Activate
                                                         </Button>
                                                     )}
+                                                    <Button
+                                                        variant="outline-dark"
+                                                        size="sm"
+                                                        className="px-2 py-1"
+                                                        disabled={sendingId === version.id}
+                                                        onClick={() => handleSendToCommittee(version)}
+                                                    >
+                                                        {sendingId === version.id ? <Spinner size="sm" /> : 'Send to Committee'}
+                                                    </Button>
+                                                    {/* Student comments button removed */}
                                                 </div>
-                                            </ListGroup.Item>
-                                        ))}
+                                                {/* Comments section removed */}
+                                             </ListGroup.Item>
+                                         ))}
                                     </ListGroup>
                                 ) : (
                                     <p className="text-muted text-center mb-0">No saved versions for this level.</p>

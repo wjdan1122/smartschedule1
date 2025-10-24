@@ -63,6 +63,32 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Role helpers
+const hasRoleLike = (user, ...patterns) => {
+  if (!user) return false;
+  const role = String(user.role || '').toLowerCase();
+  return patterns.some((p) => role.includes(p));
+};
+
+const requireScheduler = (req, res, next) => {
+  if (!hasRoleLike(req.user, 'schedule', 'scheduler')) {
+    return res.status(403).json({ error: 'Scheduler privileges required.' });
+  }
+  next();
+};
+
+const requireCommitteeRole = (req, res, next) => {
+  if (!hasRoleLike(req.user, 'committee')) {
+    return res.status(403).json({ error: 'Committee privileges required.' });
+  }
+  next();
+};
+
+// Allow either scheduler or committee (staff-only helper)
+const requireStaff = (req, res, next) => {
+  if (hasRoleLike(req.user, 'schedule', 'scheduler', 'committee')) return next();
+  return res.status(403).json({ error: 'Staff privileges required.' });
+};
 // Middleware to verify committee access
 const verifyCommittee = (req, res, next) => {
   const { password, committeePassword } = req.body || {};
@@ -271,7 +297,8 @@ app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
   try {
     const { level } = req.params;
 
-    const scheduleQuery = 'SELECT * FROM schedule_versions WHERE level = $1 AND is_active = true LIMIT 1';
+    // Only expose to students when the version is active and committee approved
+    const scheduleQuery = 'SELECT * FROM schedule_versions WHERE level = $1 AND is_active = true AND committee_approved = true LIMIT 1';
     const scheduleResult = await client.query(scheduleQuery, [level]);
 
     if (scheduleResult.rows.length === 0) {
@@ -758,6 +785,97 @@ app.post('/api/schedule-versions', authenticateToken, async (req, res) => {
   }
 });
 
+// Mark a schedule version as approved by the scheduler (stage 1)
+app.patch('/api/schedule-versions/:id/scheduler-approve', authenticateToken, requireScheduler, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { approved } = req.body || {};
+    const value = approved === false ? false : true;
+    const result = await client.query(
+      'UPDATE schedule_versions SET scheduler_approved = $1 WHERE id = $2 RETURNING *',
+      [value, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Schedule version not found.' });
+    }
+    res.json({ success: true, version: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating scheduler approval:', error);
+    res.status(500).json({ message: 'Failed to update scheduler approval.' });
+  } finally {
+    client.release();
+  }
+});
+
+// List all versions pending Load Committee review (stage 2)
+app.get('/api/schedule-versions/pending-committee', authenticateToken, requireCommitteeRole, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    console.log('[pending-committee] user:', req.user?.email, 'role:', req.user?.role);
+    // Show every version sent by scheduler, regardless of committee status or active flag
+    const sql = `
+      SELECT *
+      FROM schedule_versions
+      WHERE COALESCE(scheduler_approved, false) = true
+         OR is_active = true
+      ORDER BY created_at DESC`;
+    console.log('[pending-committee] SQL:', sql);
+    const result = await client.query(sql);
+    console.log('[pending-committee] rows:', result.rowCount);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching pending committee schedules:', error);
+    res.status(500).json({ message: 'Failed to fetch pending committee schedules.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Load Committee review: approve or request changes, with optional comment
+app.patch('/api/schedule-versions/:id/committee-review', authenticateToken, requireCommitteeRole, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { approved, committee_comment } = req.body || {};
+    const value = approved === true; // default false when not explicitly true
+    console.log('[committee-review] user:', req.user?.email, 'role:', req.user?.role);
+    console.log('[committee-review] id:', id, 'approved:', value, 'comment:', committee_comment || null);
+
+    await client.query('BEGIN');
+
+    // Find level of this version
+    const lvlRes = await client.query('SELECT level FROM schedule_versions WHERE id = $1', [id]);
+    if (lvlRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Schedule version not found.' });
+    }
+    const level = lvlRes.rows[0].level;
+
+    if (value) {
+      // Enforce only one approved per level: unapprove others then approve this one
+      await client.query('UPDATE schedule_versions SET committee_approved = false WHERE level = $1', [level]);
+    }
+
+    const updRes = await client.query(
+      'UPDATE schedule_versions SET committee_approved = $1, committee_comment = $2 WHERE id = $3 RETURNING *',
+      [value, committee_comment || null, id]
+    );
+
+    await client.query('COMMIT');
+
+    console.log('[committee-review] level:', level, 'updated rows:', updRes.rowCount);
+
+    res.json({ success: true, version: updRes.rows[0] });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('Error updating committee review:', error);
+    res.status(500).json({ message: 'Failed to update committee review.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.patch('/api/schedule-versions/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1173,6 +1291,61 @@ app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res
 // ============================================
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// ============================================
+// TEMP DIAGNOSTIC: List database tables (remove after verification)
+// ============================================
+app.get('/api/debug/tables', authenticateToken, requireStaff, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const query = `
+      SELECT table_schema, table_name
+      FROM information_schema.tables
+      WHERE table_type = 'BASE TABLE'
+        AND table_schema NOT IN ('pg_catalog', 'information_schema')
+      ORDER BY table_schema, table_name;
+    `;
+    const result = await client.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error listing tables:', error);
+    res.status(500).json({ error: 'Failed to list database tables.' });
+  } finally {
+    client.release();
+  }
+});
+
+// TEMP DIAGNOSTIC: List columns for a given table (remove after verification)
+app.get('/api/debug/columns', authenticateToken, requireStaff, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { table, schema } = req.query;
+    if (!table) {
+      return res.status(400).json({ error: 'Query param "table" is required.' });
+    }
+    const sch = schema && String(schema).trim() ? String(schema).trim() : 'public';
+    const query = `
+      SELECT 
+        column_name,
+        data_type,
+        is_nullable,
+        column_default,
+        character_maximum_length,
+        numeric_precision,
+        numeric_scale
+      FROM information_schema.columns
+      WHERE table_schema = $1 AND table_name = $2
+      ORDER BY ordinal_position
+    `;
+    const result = await client.query(query, [sch, String(table).trim()]);
+    res.json({ schema: sch, table: String(table).trim(), columns: result.rows });
+  } catch (error) {
+    console.error('Error listing columns:', error);
+    res.status(500).json({ error: 'Failed to list table columns.' });
+  } finally {
+    client.release();
+  }
 });
 
 // Error handling middleware
