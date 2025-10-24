@@ -32,6 +32,7 @@ const LoadCommittee = () => {
   const [noteById, setNoteById] = useState({});
   const [submittingId, setSubmittingId] = useState(null);
   const [selectedLevel, setSelectedLevel] = useState(3);
+  const [facultyCommentsById, setFacultyCommentsById] = useState({});
   const levels = [3,4,5,6,7,8];
   const navigate = useNavigate();
 
@@ -45,6 +46,16 @@ const LoadCommittee = () => {
       ]);
       setPending(list || []);
       setAllCourses(courses || []);
+      // Load faculty comments for each version
+      const entries = await Promise.all(
+        (list || []).map(async v => {
+          try {
+            const data = await fetchJson(`http://localhost:5000/api/schedule-versions/${v.id}/faculty-comments`);
+            return [v.id, data];
+          } catch { return [v.id, []]; }
+        })
+      );
+      setFacultyCommentsById(Object.fromEntries(entries));
     } catch (err) {
       setError(err.message);
       if (err.message.toLowerCase().includes('auth')) navigate('/login');
@@ -151,11 +162,17 @@ const LoadCommittee = () => {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate('/login');
+  };
+
   return (
     <div className="min-h-screen bg-light">
       <Container fluid="lg" className="py-4">
-        <div className="d-flex justify-content-start align-items-center mb-4 p-3 bg-dark text-white rounded">
+        <div className="d-flex justify-content-between align-items-center mb-4 p-3 bg-dark text-white rounded">
           <h1 className="h3 mb-0">Load Committee Review</h1>
+          <Button variant="outline-light" size="sm" onClick={handleLogout}>Logout</Button>
         </div>
 
         {error && <Alert variant="danger">{error}</Alert>}
@@ -225,6 +242,21 @@ const LoadCommittee = () => {
                           >
                             {submittingId === version.id ? <Spinner size="sm" /> : <FaTimesCircle className="me-1" />} Request Changes
                           </Button>
+                        </div>
+                        <div className="mt-3">
+                          <div className="fw-semibold mb-2">Faculty Comments</div>
+                          <div className="border rounded p-2 bg-light" style={{maxHeight:'220px', overflowY:'auto'}}>
+                            {(facultyCommentsById[version.id] || []).length === 0 ? (
+                              <div className="text-muted">No faculty comments.</div>
+                            ) : (
+                              (facultyCommentsById[version.id] || []).map(c => (
+                                <div key={c.id} className="mb-2">
+                                  <div className="small text-muted">{c.faculty_name || c.faculty_email} • {new Date(c.created_at).toLocaleString()}</div>
+                                  <div>{c.comment}</div>
+                                </div>
+                              ))
+                            )}
+                          </div>
                         </div>
                       </Col>
                     </Row>

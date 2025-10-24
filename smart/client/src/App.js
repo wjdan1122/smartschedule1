@@ -12,6 +12,7 @@ import ManageRules from './pages/ManageRules';
 import ElectiveVoting from './pages/ElectiveVoting';
 import ManageNotifications from './pages/ManageNotifications';
 import LoadCommittee from './pages/LoadCommittee';
+import Faculty from './pages/Faculty';
 
 // --- 2. استيراد ملفات التنسيق العامة ---
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -42,6 +43,7 @@ function App() {
         <Route path="/managerules" element={<ProtectedRoute><ManageRules /></ProtectedRoute>} />
         <Route path="/managenotifications" element={<ProtectedRoute><ManageNotifications /></ProtectedRoute>} />
         <Route path="/load-committee" element={<ProtectedRoute><LoadCommittee /></ProtectedRoute>} />
+        <Route path="/faculty" element={<ProtectedRoute><Faculty /></ProtectedRoute>} />
 
         {/* مسارات لوحة تحكم الطالب */}
         <Route path="/student-dashboard" element={<ProtectedRoute><StudentDashboard /></ProtectedRoute>} />

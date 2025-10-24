@@ -64,8 +64,11 @@ function Login() {
       console.log('✅ Saved user to localStorage:', savedUser);
 
       // Navigate based on user role/type
-      if (userToStore.type === 'student' || userToStore.role === 'student') {
+      const roleStr = String(userToStore.role || '').toLowerCase();
+      if (userToStore.type === 'student' || roleStr === 'student') {
         navigate('/student-dashboard');
+      } else if (roleStr.includes('faculty')) {
+        navigate('/faculty');
       } else {
         navigate('/dashboard');
       }

@@ -395,6 +395,9 @@ const Dashboard = () => {
               <Nav.Link onClick={() => navigate('/managerules')} className="nav-link-custom"><FaBalanceScale className="me-2" /> Rules</Nav.Link>
               {/* ✅✅✅ THE FIX IS HERE: ADDED THE MISSING LINK ✅✅✅ */}
               <Nav.Link onClick={() => navigate('/managenotifications')} className="nav-link-custom"><FaBell className="me-2" /> Comments</Nav.Link>
+              {String(userInfo.role || '').toLowerCase().includes('faculty') && (
+                <Nav.Link onClick={() => navigate('/faculty')} className="nav-link-custom"><FaBook className="me-2" /> Faculty</Nav.Link>
+              )}
               {String(userInfo.role || '').toLowerCase().includes('committee') && (
                 <Nav.Link onClick={() => navigate('/load-committee')} className="nav-link-custom"><FaCheckCircle className="me-2" /> Load Committee</Nav.Link>
               )}

@@ -8,6 +8,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
 const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -63,6 +65,34 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Simple idempotent migrations runner
+async function runMigrations() {
+  const dir = path.join(__dirname, 'migrations');
+  try {
+    if (!fs.existsSync(dir)) return;
+    const files = fs.readdirSync(dir).filter(f => f.toLowerCase().endsWith('.sql')).sort();
+    if (files.length === 0) return;
+    console.log(`[migrate] Found ${files.length} migration file(s)`);
+    const client = await pool.connect();
+    try {
+      for (const f of files) {
+        const full = path.join(dir, f);
+        const sql = fs.readFileSync(full, 'utf8');
+        console.log(`[migrate] Running ${f} ...`);
+        await client.query(sql);
+      }
+      console.log('[migrate] Completed');
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    console.error('[migrate] Migration error:', e);
+  }
+}
+
+// Run migrations on startup (non-blocking)
+runMigrations().catch(() => {});
+
 // Role helpers
 const hasRoleLike = (user, ...patterns) => {
   if (!user) return false;
@@ -88,6 +118,13 @@ const requireCommitteeRole = (req, res, next) => {
 const requireStaff = (req, res, next) => {
   if (hasRoleLike(req.user, 'schedule', 'scheduler', 'committee')) return next();
   return res.status(403).json({ error: 'Staff privileges required.' });
+};
+// Faculty-only helper
+const requireFaculty = (req, res, next) => {
+  if (!hasRoleLike(req.user, 'faculty')) {
+    return res.status(403).json({ error: 'Faculty privileges required.' });
+  }
+  next();
 };
 // Middleware to verify committee access
 const verifyCommittee = (req, res, next) => {
@@ -1251,6 +1288,7 @@ app.get('/api/comments/all', authenticateToken, async (req, res) => {
             LEFT JOIN students s ON c.student_id = s.student_id
             LEFT JOIN users u ON s.user_id = u.user_id
             LEFT JOIN schedule_versions sv ON c.schedule_version_id = sv.id
+            WHERE c.user_id IS NULL -- exclude faculty comments
             ORDER BY c.created_at DESC;
         `;
     const result = await client.query(query);
@@ -1273,7 +1311,7 @@ app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res
       FROM comments c
       JOIN students s ON c.student_id = s.student_id
       JOIN users u ON s.user_id = u.user_id
-      WHERE c.schedule_version_id = $1
+      WHERE c.schedule_version_id = $1 AND c.user_id IS NULL -- students only
       ORDER BY c.created_at DESC
     `;
     const result = await client.query(query, [schedule_version_id]);
@@ -1311,6 +1349,97 @@ app.get('/api/debug/tables', authenticateToken, requireStaff, async (req, res) =
   } catch (error) {
     console.error('Error listing tables:', error);
     res.status(500).json({ error: 'Failed to list database tables.' });
+  } finally {
+    client.release();
+  }
+});
+
+// ============================================
+// FACULTY COMMENTS ROUTES
+// ============================================
+
+// Get all committee-approved versions (optionally filter by level)
+app.get('/api/schedule-versions/approved', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { level } = req.query || {};
+    let sql = 'SELECT * FROM schedule_versions WHERE committee_approved = true';
+    const params = [];
+    if (level) {
+      params.push(level);
+      sql += ' AND level = $1';
+    }
+    sql += ' ORDER BY created_at DESC';
+    const result = await client.query(sql, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching approved schedule versions:', error);
+    res.status(500).json({ message: 'Failed to fetch approved schedule versions.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Fetch faculty comments for a specific schedule version (stored in comments table with user_id)
+app.get('/api/schedule-versions/:id/faculty-comments', authenticateToken, requireCommitteeRole, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const sql = `
+      SELECT c.id, c.comment, c.created_at, u.user_id, u.name AS faculty_name, u.email AS faculty_email
+      FROM comments c
+      JOIN users u ON c.user_id = u.user_id
+      WHERE c.schedule_version_id = $1 AND c.user_id IS NOT NULL
+      ORDER BY c.created_at DESC`;
+    const result = await client.query(sql, [id]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching faculty comments:', error);
+    res.status(500).json({ message: 'Failed to fetch faculty comments.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Post a new faculty comment (faculty only) into comments table
+app.post('/api/schedule-versions/:id/faculty-comments', authenticateToken, requireFaculty, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params; // schedule_version_id
+    const { comment } = req.body || {};
+    if (!comment || !String(comment).trim()) {
+      return res.status(400).json({ message: 'Comment is required.' });
+    }
+    const userId = req.user?.id;
+    const insert = `INSERT INTO comments (schedule_version_id, user_id, comment)
+                    VALUES ($1, $2, $3)
+                    RETURNING id, schedule_version_id, user_id, comment, created_at`;
+    const result = await client.query(insert, [id, userId, String(comment).trim()]);
+    res.status(201).json({ success: true, comment: result.rows[0] });
+  } catch (error) {
+    console.error('Error creating faculty comment:', error);
+    res.status(500).json({ message: 'Failed to create faculty comment.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Fetch ONLY the current faculty member's comments for a specific schedule version
+app.get('/api/schedule-versions/:id/my-faculty-comments', authenticateToken, requireFaculty, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+    const sql = `
+      SELECT c.id, c.comment, c.created_at
+      FROM comments c
+      WHERE c.schedule_version_id = $1 AND c.user_id = $2
+      ORDER BY c.created_at DESC`;
+    const result = await client.query(sql, [id, userId]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching my faculty comments:', error);
+    res.status(500).json({ message: 'Failed to fetch my faculty comments.' });
   } finally {
     client.release();
   }
