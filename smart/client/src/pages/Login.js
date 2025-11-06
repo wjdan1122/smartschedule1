@@ -67,6 +67,10 @@ function Login() {
       const roleStr = String(userToStore.role || '').toLowerCase();
       if (userToStore.type === 'student' || roleStr === 'student') {
         navigate('/student-dashboard');
+      } else if (roleStr.includes('schedule') || roleStr.includes('scheduler')) {
+        navigate('/manageschedules');
+      } else if (roleStr.includes('committee') || roleStr.includes('load committee')) {
+        navigate('/load-committee');
       } else if (roleStr.includes('faculty')) {
         navigate('/faculty');
       } else {

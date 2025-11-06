@@ -25,6 +25,18 @@ const ProtectedRoute = ({ children }) => {
   return token ? children : <Navigate to="/login" replace />;
 };
 
+// Central redirect based on stored role/type
+const RedirectByRole = () => {
+  const saved = JSON.parse(localStorage.getItem('user') || '{}');
+  const role = String(saved.role || '').toLowerCase();
+  const type = String(saved.type || '');
+  if (type === 'student' || role === 'student') return <Navigate to="/student-dashboard" replace />;
+  if (role.includes('schedule') || role.includes('scheduler')) return <Navigate to="/manageschedules" replace />;
+  if (role.includes('committee') || role.includes('load committee')) return <Navigate to="/load-committee" replace />;
+  if (role.includes('faculty')) return <Navigate to="/faculty" replace />;
+  return <Navigate to="/dashboard" replace />;
+};
+
 // --- 4. تعريف التطبيق والمسارات ---
 function App() {
   return (
@@ -51,8 +63,8 @@ function App() {
         {/* أضف هنا أي مسارات أخرى خاصة بالطالب مثل /my-courses */}
 
         {/* --- المسارات الافتراضية والاحتياطية --- */}
-        <Route path="/" element={<Navigate to="/student-dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/student-dashboard" replace />} />
+        <Route path="/" element={<ProtectedRoute><RedirectByRole /></ProtectedRoute>} />
+        <Route path="*" element={<ProtectedRoute><RedirectByRole /></ProtectedRoute>} />
       </Routes>
     </Router>
   );
