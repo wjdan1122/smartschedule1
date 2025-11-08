@@ -23,7 +23,8 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 app.use(
   cors({
     // 👇 allow both 3000 and 3001 (React may choose 3001)
-    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    origin: ['http://localhost:3000', 'http://localhost:3001',
+      'https://smartschedule1-1.onrender.com'],
     credentials: true,
   })
 );
@@ -97,7 +98,7 @@ async function runMigrations() {
 }
 
 // Run migrations on startup (non-blocking)
-runMigrations().catch(() => {});
+runMigrations().catch(() => { });
 
 // Role helpers
 const hasRoleLike = (user, ...patterns) => {
@@ -676,7 +677,7 @@ app.post('/api/electives/approve', authenticateToken, async (req, res) => {
     await client.query('COMMIT');
     res.json({ success: true, message: `Course ${course_id} approved for Level ${level}.` });
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client.query('ROLLBACK').catch(() => { });
     console.error('Error approving course for level:', error);
     res.status(500).json({ error: 'Failed to approve course.' });
   } finally {
@@ -715,7 +716,7 @@ app.delete('/api/electives/approve', authenticateToken, async (req, res) => {
     await client.query('COMMIT');
     res.json({ success: true, message: `Course ${course_id} removed from Level ${level}.` });
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client.query('ROLLBACK').catch(() => { });
     console.error('Error removing approved course level:', error);
     res.status(500).json({ error: 'Failed to remove approved course.' });
   } finally {
@@ -911,7 +912,7 @@ app.patch('/api/schedule-versions/:id/committee-review', authenticateToken, requ
 
     res.json({ success: true, version: updRes.rows[0] });
   } catch (error) {
-    try { await client.query('ROLLBACK'); } catch {}
+    try { await client.query('ROLLBACK'); } catch { }
     console.error('Error updating committee review:', error);
     res.status(500).json({ message: 'Failed to update committee review.' });
   } finally {
