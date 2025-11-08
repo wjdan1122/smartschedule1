@@ -8,7 +8,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import StudentDashboard from './pages/StudentDashboard.jsx';
 import ManageSchedules from './pages/ManageSchedules.jsx';
 import ManageStudents from './pages/ManageStudents.jsx';
-import ManageRules from './pages/ManageRules.jsx';
+import ManageRules from './pages/ManageRules.JSX';
 import ElectiveVoting from './pages/ElectiveVoting.jsx';
 import ManageNotifications from './pages/ManageNotifications.jsx';
 import LoadCommittee from './pages/LoadCommittee.jsx';
