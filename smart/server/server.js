@@ -23,8 +23,7 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 app.use(
   cors({
     // 👇 allow both 3000 and 3001 (React may choose 3001)
-    origin: ['http://localhost:3000', 'http://localhost:3001',
-      'https://smartschedule1-1.onrender.com'],
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'https://smartschedule1-1.onrender.com'],
     credentials: true,
   })
 );
