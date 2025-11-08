@@ -4,15 +4,15 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 // --- 1. استيراد كل مكونات الصفحات ---
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import Dashboard from './pages/Dashboard';
-import StudentDashboard from './pages/StudentDashboard';
-import ManageSchedules from './pages/ManageSchedules';
-import ManageStudents from './pages/ManageStudents';
-import ManageRules from './pages/ManageRules';
-import ElectiveVoting from './pages/ElectiveVoting';
-import ManageNotifications from './pages/ManageNotifications';
-import LoadCommittee from './pages/LoadCommittee';
-import Faculty from './pages/Faculty';
+import Dashboard from './pages/Dashboard.jsx';
+import StudentDashboard from './pages/StudentDashboard.jsx';
+import ManageSchedules from './pages/ManageSchedules.jsx';
+import ManageStudents from './pages/ManageStudents.jsx';
+import ManageRules from './pages/ManageRules.jsx';
+import ElectiveVoting from './pages/ElectiveVoting.jsx';
+import ManageNotifications from './pages/ManageNotifications.jsx';
+import LoadCommittee from './pages/LoadCommittee.jsx';
+import Faculty from './pages/Faculty.jsx';
 
 // --- 2. استيراد ملفات التنسيق العامة ---
 import 'bootstrap/dist/css/bootstrap.min.css';
