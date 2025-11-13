@@ -10,9 +10,15 @@ const bodyParser = require('body-parser');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
+const WebSocket = require('ws');
+const { setupWSConnection } = require('y-websocket/bin/utils');
 require('dotenv').config();
 
 const app = express();
+const server = http.createServer(app);
+const COLLAB_NAMESPACE = 'collaboration';
+const wss = new WebSocket.Server({ server });
 // 👇 run backend on 5000 (not 3000)
 const PORT = process.env.PORT || 5000;
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -29,6 +35,22 @@ app.use(
 );
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+wss.on('connection', (ws, req) => {
+  const pathName = (req.url || '').split('?')[0];
+  const segments = pathName.split('/').filter(Boolean);
+  if (segments[0] !== COLLAB_NAMESPACE) {
+    ws.close(1008, 'Unknown collaboration namespace');
+    return;
+  }
+  const docName = segments[1] || 'shared-rules';
+  console.log(`[collaboration] client connected to room: ${docName}`);
+  setupWSConnection(ws, req, { docName, gc: true });
+});
+
+wss.on('error', (err) => {
+  console.error('[collaboration] websocket error:', err);
+});
 
 // PostgreSQL Connection Pool (supports hosted providers like Supabase)
 const sslConfig = process.env.DB_SSL === 'true' ? { require: true, rejectUnauthorized: false } : undefined;
@@ -1490,16 +1512,29 @@ app.use((error, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`🚀 SmartSchedule Server running on port ${PORT}`);
-  console.log(`📊 Connected to PostgreSQL database: ${process.env.DB_NAME}`);
+server.listen(PORT, () => {
+  console.log(`dYs? SmartSchedule Server running on port ${PORT}`);
+  console.log(`dY"S Connected to PostgreSQL database: ${process.env.DB_NAME}`);
+  console.log(`[collaboration] WebSocket namespace ready at ws://localhost:${PORT}/${COLLAB_NAMESPACE}/:roomId`);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('🛑 Shutting down server...');
-  pool.end(() => {
-    console.log('Database pool closed');
-    process.exit(0);
+let shuttingDown = false;
+const gracefulShutdown = () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log('dY>` Shutting down server (HTTP + collaboration WS)...');
+  wss.clients.forEach((client) => {
+    try { client.terminate(); } catch { }
   });
-});
+  wss.close(() => console.log('[collaboration] websocket server closed'));
+  server.close(() => {
+    console.log('HTTP server closed');
+    pool.end(() => {
+      console.log('Database pool closed');
+      process.exit(0);
+    });
+  });
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);

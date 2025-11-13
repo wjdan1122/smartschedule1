@@ -17,6 +17,8 @@ const ManageStudents = () => {
     });
     const [message, setMessage] = useState({ text: '', type: '' });
     const [error, setError] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [levelFilter, setLevelFilter] = useState('all');
     const navigate = useNavigate();
 
     const levels = [3, 4, 5, 6, 7, 8];
@@ -145,6 +147,18 @@ const ManageStudents = () => {
         showMessage('Student data reset (mock action)', 'info');
     };
 
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const filteredStudents = students.filter(student => {
+        const name = (student?.name || student?.studentName || '').toLowerCase();
+        const matchesSearch =
+            !normalizedSearch ||
+            name.includes(normalizedSearch) ||
+            String(student?.student_id || '').includes(normalizedSearch);
+        const matchesLevel =
+            levelFilter === 'all' || Number(student?.level) === Number(levelFilter);
+        return matchesSearch && matchesLevel;
+    });
+
     return (
         <div className="min-vh-100" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
             <Container fluid="lg" className="py-4">
@@ -244,12 +258,46 @@ const ManageStudents = () => {
                             </Card.Body>
                         </Card>
 
+                        {!loading && (
+                            <Row className="gy-3 gx-4 mb-4 align-items-end">
+                                <Col md={8}>
+                                    <Form.Group>
+                                        <Form.Label className="fw-bold">Quick Search</Form.Label>
+                                        <Form.Control
+                                            type="text"
+                                            placeholder="Search by student name or ID..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                        />
+                                    </Form.Group>
+                                </Col>
+                                <Col md={4}>
+                                    <Form.Group>
+                                        <Form.Label className="fw-bold">Filter by Level</Form.Label>
+                                        <Form.Select
+                                            value={levelFilter}
+                                            onChange={(e) => setLevelFilter(e.target.value)}
+                                        >
+                                            <option value="all">All levels</option>
+                                            {levels.map(level => (
+                                                <option key={level} value={level}>Level {level}</option>
+                                            ))}
+                                        </Form.Select>
+                                    </Form.Group>
+                                </Col>
+                            </Row>
+                        )}
+
                         {loading ? (
                             <div className="text-center p-5">
                                 <Spinner animation="border" variant="primary" />
                                 <p className="mt-2">Loading students list...</p>
                             </div>
-                        ) : students.length > 0 ? (
+                        ) : students.length === 0 ? (
+                            <div className="text-center text-gray-600 p-6 bg-gray-50 border-dashed border-2 border-gray-300 rounded-lg">
+                                <p>No students currently in the list.</p>
+                            </div>
+                        ) : filteredStudents.length > 0 ? (
                             <Card className="shadow-sm" style={{ borderRadius: '12px' }}>
                                 <Card.Body className="p-4">
                                     <h3 className="mb-4 d-flex align-items-center">
@@ -258,7 +306,7 @@ const ManageStudents = () => {
                                     </h3>
 
                                     <Row xs={1} md={2} className="g-4">
-                                        {students.map(student => (
+                                        {filteredStudents.map(student => (
                                             <Col key={student.student_id}>
                                                 <Card
                                                     className="h-100 shadow-sm border-2"
@@ -332,7 +380,7 @@ const ManageStudents = () => {
                             </Card>
                         ) : (
                             <div className="text-center text-gray-600 p-6 bg-gray-50 border-dashed border-2 border-gray-300 rounded-lg">
-                                <p>No students currently in the list.</p>
+                                <p>No students match the current search or level filter.</p>
                             </div>
                         )}
                     </Card.Body>
