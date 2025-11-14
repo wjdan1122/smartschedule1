@@ -219,17 +219,8 @@ const validateId = (id, fieldName = 'ID') => {
  * @param {string} password - Committee password from request
  * @returns {object} { isValid: boolean, error: string }
  */
-const validateCommitteePassword = (password) => {
-    if (!password || typeof password !== 'string') {
-        return { isValid: false, error: 'Committee password is required' };
-    }
-
-    const expectedPassword = process.env.COMMITTEE_PASSWORD || '123';
-
-    if (password !== expectedPassword) {
-        return { isValid: false, error: 'Invalid committee password' };
-    }
-
+const validateCommitteePassword = () => {
+    // Committee password checks disabled per latest requirements
     return { isValid: true };
 };
 

@@ -157,18 +157,7 @@ const requireOwnDataOrStaff = (req, res, next) => {
  * (Used for registration and sensitive operations)
  */
 const verifyCommitteePassword = (req, res, next) => {
-    const { password, committeePassword } = req.body || {};
-    const pwd = committeePassword || password;
-
-    const expectedPassword = process.env.COMMITTEE_PASSWORD || '123';
-
-    if (pwd !== expectedPassword) {
-        return res.status(401).json({
-            error: 'كلمة المرور غير صحيحة، غير مسموح بالدخول.',
-            error_en: 'Invalid committee password. Access denied.'
-        });
-    }
-
+    // Committee password verification disabled per latest requirements
     next();
 };
 
