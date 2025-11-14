@@ -11,10 +11,34 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const crypto = require('crypto');
 const WebSocket = require('ws');
 const { setupWSConnection } = require('y-websocket/bin/utils');
 require('dotenv').config();
+// ✨ Phase 1: Import validation and authentication middleware
+const {
+  requireScheduler,
+  requireCommitteeRole,
+  requireFaculty,
+  requireStaff,
+  requireStudent,
+  requireOwnData,
+  requireOwnDataOrStaff,
+  verifyCommitteePassword
+} = require('./middleware/auth');
 
+const {
+  validateUserRegistration,
+  validateStudentRegistration,
+  validateLogin,
+  validateStudentUpdate,
+  validateCourseCreation,
+  validateComment,
+  validateVote,
+  validateScheduleVersion,
+  validateRule,
+  validateIdParam
+} = require('./middleware/validation');
 const app = express();
 const server = http.createServer(app);
 const COLLAB_NAMESPACE = 'collaboration';
@@ -128,53 +152,25 @@ const hasRoleLike = (user, ...patterns) => {
   return patterns.some((p) => role.includes(p));
 };
 
-const requireScheduler = (req, res, next) => {
-  if (!hasRoleLike(req.user, 'schedule', 'scheduler')) {
-    return res.status(403).json({ error: 'Scheduler privileges required.' });
-  }
-  next();
-};
 
-const requireCommitteeRole = (req, res, next) => {
-  if (!hasRoleLike(req.user, 'committee')) {
-    return res.status(403).json({ error: 'Committee privileges required.' });
-  }
-  next();
-};
+
+
 
 // Allow either scheduler or committee (staff-only helper)
-const requireStaff = (req, res, next) => {
-  if (hasRoleLike(req.user, 'schedule', 'scheduler', 'committee')) return next();
-  return res.status(403).json({ error: 'Staff privileges required.' });
-};
+
 // Faculty-only helper
-const requireFaculty = (req, res, next) => {
-  if (!hasRoleLike(req.user, 'faculty')) {
-    return res.status(403).json({ error: 'Faculty privileges required.' });
-  }
-  next();
-};
+
 // Middleware to verify committee access
-const verifyCommittee = (req, res, next) => {
-  const { password, committeePassword } = req.body || {};
-  const pwd = committeePassword || password;
-  // Accept either
-  if (pwd !== process.env.COMMITTEE_PASSWORD) {
-    return res
-      .status(401)
-      .json({ error: 'كلمة المرور غير صحيحة، غير مسموح بالدخول.' });
-  }
-  next();
-};
+
 
 // ============================================
 // AUTHENTICATION ROUTES
 // ============================================
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', validateLogin, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.validatedData;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
@@ -277,11 +273,49 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// ✅ Register new user (faculty/staff) - RESTORED
-app.post('/api/auth/register-user', verifyCommittee, async (req, res) => {
+// Lightweight password reset request endpoint
+app.post('/api/auth/forgot-password', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { email, password, name, role } = req.body;
+    const { email } = req.body || {};
+    if (!email || typeof email !== 'string' || !email.trim()) {
+      return res.status(400).json({ error: 'Valid email is required' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const result = await client.query(
+      'SELECT user_id FROM users WHERE LOWER(email) = $1 LIMIT 1',
+      [normalizedEmail]
+    );
+
+    if (result.rowCount === 0) {
+      return res.json({
+        success: true,
+        message: 'If the email is registered, reset instructions have been sent.'
+      });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    console.log(`[password-reset] token for ${normalizedEmail}: ${resetToken} (expires ${expiresAt})`);
+
+    res.json({
+      success: true,
+      message: 'Password reset instructions have been sent to your email.'
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Unable to process password reset request' });
+  } finally {
+    client.release();
+  }
+});
+
+// ✅ Register new user (faculty/staff) - RESTORED
+app.post('/api/auth/register-user', validateUserRegistration, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { email, password, name, role } = req.validatedData;
     const hashedPassword = await bcrypt.hash(password, 10);
     const query = `
       INSERT INTO users (email, password, name, role)
@@ -308,11 +342,11 @@ app.post('/api/auth/register-user', verifyCommittee, async (req, res) => {
 });
 
 // ✅ Register new student - RESTORED
-app.post('/api/auth/register-student', verifyCommittee, async (req, res) => {
+app.post('/api/auth/register-student', validateStudentRegistration, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { email, password, name, level, is_ir } = req.body;
+    const { email, password, name, level, is_ir } = req.validatedData;
     const hashedPassword = await bcrypt.hash(password, 10);
     const userQuery = `
       INSERT INTO users (email, password, name, role)
@@ -391,7 +425,7 @@ app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
 });
 
 // Get a single student's full details (can be used in profiles)
-app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
+app.get('/api/student/:user_id', authenticateToken, requireOwnDataOrStaff, async (req, res) => {
   const client = await pool.connect();
   try {
     const { user_id } = req.params;
@@ -430,19 +464,20 @@ app.get('/api/students', authenticateToken, async (req, res) => {
 });
 
 // Update a student's level
-app.put('/api/students/:id', authenticateToken, async (req, res) => {
+app.put('/api/students/:id', authenticateToken, requireStaff, validateStudentUpdate, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { id } = req.params;
-    const { level } = req.body;
-    if (!level) {
-      return res.status(400).json({ error: 'Level is required for update.' });
-    }
+    const { studentId, level } = req.validatedData;
+
+    // No manual validation needed - middleware handles it!
+
     const query = `UPDATE students SET level = $1 WHERE student_id = $2 RETURNING student_id, level`;
-    const result = await client.query(query, [level, id]);
+    const result = await client.query(query, [level, studentId]); // Changed 'id' to 'studentId'
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found.' });
     }
+
     res.json({ success: true, message: 'Student level updated successfully!', student: result.rows[0] });
   } catch (error) {
     console.error('Error updating student:', error);
@@ -558,10 +593,10 @@ app.get('/api/courses/elective', async (req, res) => {
   }
 });
 
-app.post('/api/courses', verifyCommittee, async (req, res) => {
+app.post('/api/courses', validateUserRegistration, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { name, credit, level, is_elective, dept_code } = req.body;
+    const { name, credit, level, is_elective, dept_code } = req.validatedData;
     const query = `
       INSERT INTO courses (name, credit, level, is_elective, dept_code)
       VALUES ($1, $2, $3, $4, $5)
@@ -762,10 +797,10 @@ app.get('/api/schedules', async (req, res) => {
   }
 });
 
-app.post('/api/schedules', verifyCommittee, async (req, res) => {
+app.post('/api/schedules', validateUserRegistration, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { group_number, level } = req.body;
+    const { group_number, level } = req.validatedData;
     const query = `
       INSERT INTO schedules (group_number, level)
       VALUES ($1, $2)

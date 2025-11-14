@@ -26,7 +26,8 @@ api.interceptors.request.use(
 export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   registerUser: (data) => api.post('/auth/register-user', data),
-  registerStudent: (data) => api.post('/auth/register-student', data)
+  registerStudent: (data) => api.post('/auth/register-student', data),
+  requestPasswordReset: (email) => api.post('/auth/forgot-password', { email })
 };
 
 // Student API

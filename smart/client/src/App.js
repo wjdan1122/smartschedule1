@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 // --- 1. استيراد كل مكونات الصفحات ---
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import ForgotPassword from './pages/ForgotPassword';
 import Dashboard from './pages/Dashboard.jsx';
 import StudentDashboard from './pages/StudentDashboard.jsx';
 import ManageSchedules from './pages/ManageSchedules.jsx';
@@ -45,6 +46,7 @@ function App() {
         {/* --- المسارات العامة (متاحة للجميع) --- */}
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
 
         {/* --- المسارات المحمية (تتطلب تسجيل الدخول) --- */}
 

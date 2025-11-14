@@ -12,16 +12,25 @@ function Signup() {
         level: ''
     });
     const [error, setError] = useState('');
+    const [fieldErrors, setFieldErrors] = useState({}); // Field-level errors
     const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
     const validateEmail = (email) => {
-        return email.endsWith('@student.ksu.edu.sa') || email.endsWith('@ksu.edu.sa');
+        // Check if it's 9 digits for student or valid staff email
+        const studentPattern = /^[0-9]{9}@student\.ksu\.edu\.sa$/;
+        const staffPattern = /^[a-zA-Z0-9._-]+@ksu\.edu\.sa$/;
+        return studentPattern.test(email) || staffPattern.test(email);
     };
 
     const handleChange = (e) => {
         const { name, value } = e.target;
+
+        // Clear field error when user starts typing
+        setFieldErrors(prev => ({ ...prev, [name]: '' }));
+        setError('');
+
         setFormData((prevData) => {
             const updatedData = {
                 ...prevData,
@@ -43,53 +52,60 @@ function Signup() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+        setFieldErrors({});
         setSuccess('');
 
-        console.log('=== SIGNUP ATTEMPT ===');
-        console.log('Form Data:', formData);
+        const errors = {};
 
         // Validation
         if (!formData.name.trim()) {
-            console.log('ERROR: Name is empty');
-            setError('Name is required');
-            return;
+            errors.name = 'Please enter your full name';
         }
 
-        if (!validateEmail(formData.email)) {
-            console.log('ERROR: Invalid email format');
-            setError('Please enter a valid KSU university email address');
-            return;
+        if (!formData.email) {
+            errors.email = 'Email is required';
+        } else if (formData.email.endsWith('@student.ksu.edu.sa')) {
+            // Check for 9 digits
+            const emailPrefix = formData.email.split('@')[0];
+            if (!/^[0-9]{9}$/.test(emailPrefix)) {
+                errors.email = 'Student email must be exactly 9 digits (e.g., 123456789@student.ksu.edu.sa)';
+            }
+        } else if (!validateEmail(formData.email)) {
+            errors.email = 'Please use a valid KSU email (@ksu.edu.sa for staff)';
         }
 
-        if (formData.password.length < 6) {
-            console.log('ERROR: Password too short');
-            setError('Password must be at least 6 characters long');
-            return;
+        if (!formData.password) {
+            errors.password = 'Password is required';
+        } else if (formData.password.length < 6) {
+            errors.password = 'Password must be at least 6 characters long';
+        } else if (['123456', 'password', '123456789'].includes(formData.password.toLowerCase())) {
+            errors.password = 'This password is too weak. Please choose a stronger one';
         }
 
         const isStudent = formData.email.endsWith('@student.ksu.edu.sa');
-        console.log('Is Student:', isStudent);
 
         if (!isStudent && !formData.role) {
-            console.log('ERROR: No role selected for staff');
-            setError('Please select a role');
-            return;
+            errors.role = 'Please select a role';
         }
 
         if (isStudent) {
             const levelNumber = parseInt(formData.level, 10);
-            if (!levelNumber || levelNumber < 1) {
-                console.log('ERROR: Invalid level for student');
-                setError('Please enter a valid level for the student (positive number)');
-                return;
+            if (!levelNumber || levelNumber < 1 || levelNumber > 12) {
+                errors.level = 'Please enter a valid level (1-12)';
             }
+        }
+
+        // If there are validation errors, show them
+        if (Object.keys(errors).length > 0) {
+            setFieldErrors(errors);
+            setError('Please fix the errors below');
+            return;
         }
 
         setLoading(true);
 
         try {
             if (isStudent) {
-                console.log('Attempting STUDENT registration...');
                 const requestData = {
                     name: formData.name,
                     email: formData.email,
@@ -98,12 +114,10 @@ function Signup() {
                     is_ir: false,
                     committeePassword: '123'
                 };
-                console.log('Student Request Data:', requestData);
 
                 const response = await authAPI.registerStudent(requestData);
                 console.log('Student Registration SUCCESS:', response.data);
             } else {
-                console.log('Attempting USER registration...');
                 const requestData = {
                     name: formData.name,
                     email: formData.email,
@@ -111,26 +125,36 @@ function Signup() {
                     role: formData.role,
                     committeePassword: '123'
                 };
-                console.log('User Request Data:', requestData);
 
                 const response = await authAPI.registerUser(requestData);
                 console.log('User Registration SUCCESS:', response.data);
             }
 
-            setSuccess('Account created successfully! Redirecting to login...');
+            setSuccess('✅ Account created successfully! Redirecting to login...');
             setTimeout(() => {
                 navigate('/login');
             }, 2000);
 
         } catch (err) {
-            console.error('=== REGISTRATION ERROR ===');
-            console.error('Full Error:', err);
-            console.error('Error Response:', err.response);
-            console.error('Error Data:', err.response?.data);
-            console.error('Error Status:', err.response?.status);
-            console.error('Error Message:', err.message);
+            console.error('=== REGISTRATION ERROR ===', err);
 
-            setError(err.response?.data?.error || err.message || 'Registration failed. Please try again.');
+            // Better error messages from backend
+            const backendError = err.response?.data?.error;
+            if (backendError) {
+                if (backendError.includes('9 digits')) {
+                    setFieldErrors({ email: backendError });
+                    setError('Please check your email format');
+                } else if (backendError.includes('Password')) {
+                    setFieldErrors({ password: backendError });
+                    setError('Password issue detected');
+                } else if (backendError.includes('already')) {
+                    setError('❌ This email is already registered. Please login instead.');
+                } else {
+                    setError('❌ ' + backendError);
+                }
+            } else {
+                setError('❌ Registration failed. Please try again.');
+            }
         } finally {
             setLoading(false);
         }
@@ -149,8 +173,18 @@ function Signup() {
                                 <p className="mb-0">Create Account - SmartSchedule</p>
                             </Card.Header>
                             <Card.Body className="p-4">
-                                {error && <Alert variant="danger">{error}</Alert>}
-                                {success && <Alert variant="success">{success}</Alert>}
+                                {error && (
+                                    <Alert variant="danger" className="d-flex align-items-center">
+                                        <span style={{ fontSize: '1.2rem', marginRight: '10px' }}>⚠️</span>
+                                        <div>{error}</div>
+                                    </Alert>
+                                )}
+                                {success && (
+                                    <Alert variant="success" className="d-flex align-items-center">
+                                        <span style={{ fontSize: '1.2rem', marginRight: '10px' }}>✅</span>
+                                        <div>{success}</div>
+                                    </Alert>
+                                )}
 
                                 <Form onSubmit={handleSubmit}>
                                     <Form.Group className="mb-3">
@@ -163,7 +197,13 @@ function Signup() {
                                             onChange={handleChange}
                                             required
                                             disabled={loading}
+                                            isInvalid={!!fieldErrors.name}
                                         />
+                                        {fieldErrors.name && (
+                                            <Form.Control.Feedback type="invalid">
+                                                {fieldErrors.name}
+                                            </Form.Control.Feedback>
+                                        )}
                                     </Form.Group>
 
                                     <Form.Group className="mb-3">
@@ -171,15 +211,21 @@ function Signup() {
                                         <Form.Control
                                             type="email"
                                             name="email"
-                                            placeholder="######@student.ksu.edu.sa or @ksu.edu.sa"
+                                            placeholder="123456789@student.ksu.edu.sa"
                                             value={formData.email}
                                             onChange={handleChange}
                                             required
                                             disabled={loading}
+                                            isInvalid={!!fieldErrors.email}
                                         />
-                                        <Form.Text className="text-muted">
-                                            Use @student.ksu.edu.sa for students, @ksu.edu.sa for staff
-                                        </Form.Text>
+                                        {fieldErrors.email ? (
+                                            <Form.Control.Feedback type="invalid">
+                                                {fieldErrors.email}
+                                            </Form.Control.Feedback>
+                                        ) : (
+                                            <Form.Text className="text-muted">
+                                            </Form.Text>
+                                        )}
                                     </Form.Group>
 
                                     <Form.Group className="mb-3">
@@ -192,7 +238,17 @@ function Signup() {
                                             onChange={handleChange}
                                             required
                                             disabled={loading}
+                                            isInvalid={!!fieldErrors.password}
                                         />
+                                        {fieldErrors.password ? (
+                                            <Form.Control.Feedback type="invalid">
+                                                {fieldErrors.password}
+                                            </Form.Control.Feedback>
+                                        ) : (
+                                            <Form.Text className="text-muted">
+
+                                            </Form.Text>
+                                        )}
                                     </Form.Group>
 
                                     {isStudentEmail && (
@@ -202,15 +258,23 @@ function Signup() {
                                                 type="number"
                                                 name="level"
                                                 min="1"
-                                                placeholder="Enter your current level"
+                                                max="12"
+                                                placeholder="Enter your current level (1-12)"
                                                 value={formData.level}
                                                 onChange={handleChange}
                                                 required
                                                 disabled={loading}
+                                                isInvalid={!!fieldErrors.level}
                                             />
-                                            <Form.Text className="text-muted">
-                                                Example: level 1 for new students
-                                            </Form.Text>
+                                            {fieldErrors.level ? (
+                                                <Form.Control.Feedback type="invalid">
+                                                    {fieldErrors.level}
+                                                </Form.Control.Feedback>
+                                            ) : (
+                                                <Form.Text className="text-muted">
+
+                                                </Form.Text>
+                                            )}
                                         </Form.Group>
                                     )}
 
@@ -222,6 +286,7 @@ function Signup() {
                                             onChange={handleChange}
                                             required={!isStudentEmail}
                                             disabled={loading || isStudentEmail}
+                                            isInvalid={!!fieldErrors.role}
                                         >
                                             <option value="">Select your role</option>
                                             <option value="register">Registrar</option>
@@ -229,11 +294,15 @@ function Signup() {
                                             <option value="load committee">Load Committee</option>
                                             <option value="schedule">Scheduler</option>
                                         </Form.Select>
-                                        {isStudentEmail && (
+                                        {fieldErrors.role ? (
+                                            <Form.Control.Feedback type="invalid">
+                                                {fieldErrors.role}
+                                            </Form.Control.Feedback>
+                                        ) : isStudentEmail ? (
                                             <Form.Text className="text-muted">
-                                                Student role will be assigned automatically
+                                                👨‍🎓 Student role is assigned automatically
                                             </Form.Text>
-                                        )}
+                                        ) : null}
                                     </Form.Group>
 
                                     <Button variant="primary" type="submit" className="w-100 mb-3" disabled={loading}>

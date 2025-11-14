@@ -7,24 +7,49 @@ function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({}); // Field-level errors
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const validateEmail = (email) => {
-    return email.endsWith('@student.ksu.edu.sa') || email.endsWith('@ksu.edu.sa');
+    const studentPattern = /^[0-9]{9}@student\.ksu\.edu\.sa$/;
+    const staffPattern = /^[a-zA-Z0-9._-]+@ksu\.edu\.sa$/;
+    return studentPattern.test(email) || staffPattern.test(email);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setFieldErrors({});
 
-    if (!validateEmail(email)) {
-      setError('Please enter a valid KSU university email address');
-      return;
+    const errors = {};
+
+    // Validation
+    if (!email) {
+      errors.email = 'Email is required';
+    } else if (!validateEmail(email)) {
+      if (email.endsWith('@student.ksu.edu.sa')) {
+        const emailPrefix = email.split('@')[0];
+        if (!/^[0-9]{9}$/.test(emailPrefix)) {
+          errors.email = 'Student email must be exactly 9 digits (e.g., 123456789@student.ksu.edu.sa)';
+        } else {
+          errors.email = 'Invalid email format';
+        }
+      } else {
+        errors.email = 'Please use a valid KSU email address';
+      }
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long');
+    if (!password) {
+      errors.password = 'Password is required';
+    } else if (password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    }
+
+    // If there are validation errors, show them
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setError('Please fix the errors below');
       return;
     }
 
@@ -78,7 +103,23 @@ function Login() {
       }
     } catch (err) {
       console.error('Login error:', err);
-      setError(err.response?.data?.error || err.message || 'Login failed. Please check your credentials.');
+
+      const backendError = err.response?.data?.error;
+
+      if (err.response?.status === 401) {
+        setError('❌ Invalid email or password. Please try again.');
+      } else if (backendError) {
+        if (backendError.includes('9 digits')) {
+          setFieldErrors({ email: backendError });
+          setError('Please check your email format');
+        } else if (backendError.includes('Email')) {
+          setFieldErrors({ email: backendError });
+        } else {
+          setError('❌ ' + backendError);
+        }
+      } else {
+        setError('❌ Login failed. Please check your credentials and try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -98,19 +139,37 @@ function Login() {
                 <p className="mb-0">SmartSchedule</p>
               </Card.Header>
               <Card.Body className="p-4">
-                {error && <Alert variant="danger">{error}</Alert>}
+                {error && (
+                  <Alert variant="danger" className="d-flex align-items-center">
+                    <span style={{ fontSize: '1.2rem', marginRight: '10px' }}>⚠️</span>
+                    <div>{error}</div>
+                  </Alert>
+                )}
 
                 <Form onSubmit={handleSubmit}>
                   <Form.Group className="mb-3">
                     <Form.Label>University Email</Form.Label>
                     <Form.Control
                       type="email"
-                      placeholder="######@student.ksu.edu.sa"
+                      placeholder="123456789@student.ksu.edu.sa"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setFieldErrors(prev => ({ ...prev, email: '' }));
+                        setError('');
+                      }}
                       required
                       disabled={loading}
+                      isInvalid={!!fieldErrors.email}
                     />
+                    {fieldErrors.email ? (
+                      <Form.Control.Feedback type="invalid">
+                        {fieldErrors.email}
+                      </Form.Control.Feedback>
+                    ) : (
+                      <Form.Text className="text-muted">
+                      </Form.Text>
+                    )}
                   </Form.Group>
 
                   <Form.Group className="mb-3">
@@ -119,11 +178,32 @@ function Login() {
                       type="password"
                       placeholder="Enter your password"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setFieldErrors(prev => ({ ...prev, password: '' }));
+                        setError('');
+                      }}
                       required
                       disabled={loading}
+                      isInvalid={!!fieldErrors.password}
                     />
+                    {fieldErrors.password && (
+                      <Form.Control.Feedback type="invalid">
+                        {fieldErrors.password}
+                      </Form.Control.Feedback>
+                    )}
                   </Form.Group>
+
+                  <div className="text-center mb-3">
+                    <Button
+                      variant="link"
+                      className="p-0"
+                      onClick={() => navigate('/forgot-password')}
+                      disabled={loading}
+                    >
+                      Forgot password?
+                    </Button>
+                  </div>
 
                   <Button variant="primary" type="submit" className="w-100" disabled={loading}>
                     {loading ? (
