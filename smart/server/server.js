@@ -1392,9 +1392,8 @@ app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res
 // HEALTH CHECK & FINAL MIDDLEWARE
 // ============================================
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.json({ status: 'OK-V2', timestamp: new Date().toISOString() });
 });
-
 // ============================================
 // TEMP DIAGNOSTIC: List database tables (remove after verification)
 // ============================================
