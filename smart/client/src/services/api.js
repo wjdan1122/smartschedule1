@@ -1,8 +1,9 @@
 // smart3/client/src/services/api.js
 import axios from 'axios';
 
+// 1. التعديل: الرابط الأساسي الآن لا يحتوي على /api
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api',
+  baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000',
   headers: {
     'Content-Type': 'application/json'
   }
@@ -22,49 +23,49 @@ api.interceptors.request.use(
   }
 );
 
+// 2. التعديل: تمت إضافة /api إلى كل المسارات بالأسفل
+
 // Authentication API
 export const authAPI = {
-  login: (email, password) => api.post('/auth/login', { email, password }),
-  registerUser: (data) => api.post('/auth/register-user', data),
-  registerStudent: (data) => api.post('/auth/register-student', data),
-  requestPasswordReset: (email) => api.post('/auth/forgot-password', { email })
+  login: (email, password) => api.post('/api/auth/login', { email, password }),
+  registerUser: (data) => api.post('/api/auth/register-user', data),
+  registerStudent: (data) => api.post('/api/auth/register-student', data),
+  requestPasswordReset: (email) => api.post('/api/auth/forgot-password', { email })
 };
 
 // Student API
 export const studentAPI = {
-  getAll: () => api.get('/students'),
-  getById: (userId) => api.get(`/student/${userId}`)
+  getAll: () => api.get('/api/students'),
+  getById: (userId) => api.get(`/api/student/${userId}`)
 };
 
 // Course API
 export const courseAPI = {
-  getAll: () => api.get('/courses'),
-  getElective: () => api.get('/courses/elective'),
-  create: (data) => api.post('/courses', data)
+  getAll: () => api.get('/api/courses'),
+  getElective: () => api.get('/api/courses/elective'),
+  create: (data) => api.post('/api/courses', data)
 };
 
 // Voting API
 export const voteAPI = {
-  vote: (data) => api.post('/vote', data),
-  getVotesByCourse: (courseId) => api.get(`/votes/course/${courseId}`)
+  vote: (data) => api.post('/api/vote', data),
+  getVotesByCourse: (courseId) => api.get(`/api/votes/course/${courseId}`)
 };
 
 // Schedule API
 export const scheduleAPI = {
-  getAll: () => api.get('/schedules'),
-  create: (data) => api.post('/schedules', data)
+  getAll: () => api.get('/api/schedules'),
+  create: (data) => api.post('/api/schedules', data)
 };
 
 // Section API
 export const sectionAPI = {
-  getAll: () => api.get('/sections')
+  getAll: () => api.get('/api/sections')
 };
 
 // Statistics API
 export const statisticsAPI = {
-  get: () => api.get('/statistics')
+  get: () => api.get('/api/statistics')
 };
-
-
 
 export default api;
