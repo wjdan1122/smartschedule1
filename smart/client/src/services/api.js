@@ -3,7 +3,7 @@ import axios from 'axios';
 
 // 1. التعديل: الرابط الأساسي الآن لا يحتوي على /api
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000',
+  baseURL: process.env.REACT_APP_API_BASE_URL,
   headers: {
     'Content-Type': 'application/json'
   }
