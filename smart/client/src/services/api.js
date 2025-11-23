@@ -3,6 +3,7 @@ import axios from 'axios';
 
 // 1. التعديل: الرابط الأساسي الآن لا يحتوي على /api
 const api = axios.create({
+  // الكود القديم
   baseURL: process.env.REACT_APP_API_BASE_URL,
   headers: {
     'Content-Type': 'application/json'
