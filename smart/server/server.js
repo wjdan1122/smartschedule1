@@ -54,7 +54,7 @@ app.use(
   cors({
     // 👇 allow both 3000 and 3001 (React may choose 3001)
     origin: ['http://localhost:3000', 'http://localhost:3001',
-      'https://smartschedule1.onrender.com', 'https://smartschedule1-1.onrender.com'],
+      'https://smartschedule1.onrender.com', 'https://smartschedule1-1.onrender.com', 'https://smartschedule1-three.vercel.app'],
     credentials: true,
   })
 );
