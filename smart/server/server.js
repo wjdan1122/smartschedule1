@@ -53,8 +53,14 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 app.use(
   cors({
     // 👇 allow both 3000 and 3001 (React may choose 3001)
-    origin: ['http://localhost:3000', 'http://localhost:3001',
-      'https://smartschedule1.onrender.com', 'https://smartschedule1-1.onrender.com', 'https://smartschedule1-three.vercel.app'],
+    // تأكدي من إضافة رابط Netlify الخاص بك هنا إذا لم يكن موجوداً
+    origin: [
+      'http://localhost:3000', 
+      'http://localhost:3001',
+      'https://smartschedule1.onrender.com', 
+      'https://smartschedule1-1.onrender.com', 
+      'https://smartschedule1-three.vercel.app'
+    ],
     credentials: true,
   })
 );
@@ -77,20 +83,20 @@ wss.on('error', (err) => {
   console.error('[collaboration] websocket error:', err);
 });
 
-// PostgreSQL Connection Pool (supports hosted providers like Supabase)
-const sslConfig = process.env.DB_SSL === 'true' ? { require: true, rejectUnauthorized: false } : undefined;
+// ============================================
+// 👇👇👇 START OF MODIFIED DATABASE CONNECTION 👇👇👇
+// PostgreSQL Connection Pool (Modified for Render DATABASE_URL)
+const connectionString = process.env.DATABASE_URL;
+
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl: sslConfig,
+  connectionString: connectionString,
+  ssl: connectionString ? { rejectUnauthorized: false } : false,
   keepAlive: true,
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 20000,
 });
+// 👆👆👆 END OF MODIFIED DATABASE CONNECTION 👆👆👆
 
 // Test database connection
 pool.connect((err, client, release) => {
