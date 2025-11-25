@@ -1,5 +1,4 @@
 console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE ✅✅✅");
-// smart3/smart/server/server.js
 console.log("👉 Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -46,7 +45,7 @@ const server = http.createServer(app);
 const COLLAB_NAMESPACE = 'collaboration';
 const wss = new WebSocket.Server({ server });
 
-// 👇 run backend on 5000 (not 3000)
+// 👇 run backend on 5000
 const PORT = process.env.PORT || 5000;
 
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -55,12 +54,12 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 // Middleware
 app.use(
   cors({
-    // 👇 تم تحديث الروابط لتشمل موقعك الجديد على Netlify
+    // 👇 تم إضافة رابط Netlify الجديد هنا لضمان عمل الموقع
     origin: [
       'http://localhost:3000', 
       'http://localhost:3001',
-      'https://smartschedule1-b64l.onrender.com', // رابط السيرفر
-      'https://endearing-kulfi-c96605.netlify.app' // 👈 رابط الواجهة الجديد
+      'https://smartschedule1-b64l.onrender.com',
+      'https://endearing-kulfi-c96605.netlify.app' // ✅ الرابط الضروري
     ],
     credentials: true,
   })
@@ -85,7 +84,7 @@ wss.on('error', (err) => {
   console.error('[collaboration] websocket error:', err);
 });
 
-// PostgreSQL Connection Pool (Detailed configuration matches your Render env vars)
+// PostgreSQL Connection Pool
 const sslConfig = process.env.DB_SSL === 'true' ? { require: true, rejectUnauthorized: false } : undefined;
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -151,10 +150,8 @@ async function runMigrations() {
   }
 }
 
-// Run migrations on startup (non-blocking)
 runMigrations().catch(() => { });
 
-// Role helpers
 const hasRoleLike = (user, ...patterns) => {
   if (!user) return false;
   const role = String(user.role || '').toLowerCase();
@@ -169,12 +166,10 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
   const client = await pool.connect();
   try {
     const { email, password } = req.validatedData;
-
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // First: Get user + possible student info
     const query = `
             SELECT 
                 u.user_id, u.name, u.email, u.password, u.role,
@@ -191,15 +186,11 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
     }
 
     const user = result.rows[0];
-
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Incorrect credentials' });
     }
 
-    // ============================
-    // ✅ For Student Users
-    // ============================
     if (user.role === 'student') {
       let studentId = user.student_id;
       let level = user.level;
@@ -210,11 +201,9 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
           'SELECT student_id, level, is_ir FROM students WHERE user_id = $1',
           [user.user_id]
         );
-
         if (studentResult.rowCount === 0) {
           return res.status(403).json({ error: 'User has student role but no student record exists.' });
         }
-
         const student = studentResult.rows[0];
         studentId = student.student_id;
         level = student.level;
@@ -242,9 +231,6 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
       });
     }
 
-    // ============================
-    // ✅ For Non-Student Users
-    // ============================
     const token = jwt.sign(
       { id: user.user_id, email: user.email, role: user.role, type: 'user' },
       process.env.JWT_SECRET,
@@ -270,7 +256,6 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
   }
 });
 
-// Lightweight password reset request endpoint
 app.post('/api/auth/forgot-password', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -278,24 +263,19 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     if (!email || typeof email !== 'string' || !email.trim()) {
       return res.status(400).json({ error: 'Valid email is required' });
     }
-
     const normalizedEmail = email.trim().toLowerCase();
     const result = await client.query(
       'SELECT user_id FROM users WHERE LOWER(email) = $1 LIMIT 1',
       [normalizedEmail]
     );
-
     if (result.rowCount === 0) {
       return res.json({
         success: true,
         message: 'If the email is registered, reset instructions have been sent.'
       });
     }
-
     const resetToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    console.log(`[password-reset] token for ${normalizedEmail}: ${resetToken} (expires ${expiresAt})`);
-
+    console.log(`[password-reset] token for ${normalizedEmail}: ${resetToken}`);
     res.json({
       success: true,
       message: 'Password reset instructions have been sent to your email.'
@@ -308,7 +288,6 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   }
 });
 
-// ✅ Register new user (faculty/staff) - RESTORED
 app.post('/api/auth/register-user', validateUserRegistration, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -319,26 +298,20 @@ app.post('/api/auth/register-user', validateUserRegistration, async (req, res) =
       VALUES ($1, $2, $3, $4)
       RETURNING user_id, email, name, role
     `;
-    const result = await client.query(query, [
-      email,
-      hashedPassword,
-      name,
-      role,
-    ]);
-    res.json({ success: true, message: 'تمت إضافة المستخدم بنجاح!', user: result.rows[0] });
+    const result = await client.query(query, [email, hashedPassword, name, role]);
+    res.json({ success: true, message: 'User added successfully!', user: result.rows[0] });
   } catch (error) {
     console.error('Error creating user:', error);
     if (error.code === '23505') {
-      res.status(400).json({ error: 'البريد الإلكتروني مستخدم بالفعل' });
+      res.status(400).json({ error: 'Email already exists' });
     } else {
-      res.status(500).json({ error: 'خطأ في إضافة المستخدم' });
+      res.status(500).json({ error: 'Error creating user' });
     }
   } finally {
     client.release();
   }
 });
 
-// ✅ Register new student - RESTORED
 app.post('/api/auth/register-student', validateStudentRegistration, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -357,15 +330,11 @@ app.post('/api/auth/register-student', validateStudentRegistration, async (req, 
       VALUES ($1, $2, $3)
       RETURNING student_id
     `;
-    const studentResult = await client.query(studentQuery, [
-      userId,
-      level,
-      is_ir || false,
-    ]);
+    const studentResult = await client.query(studentQuery, [userId, level, is_ir || false]);
     await client.query('COMMIT');
     res.json({
       success: true,
-      message: 'تمت إضافة الطالب بنجاح!',
+      message: 'Student added successfully!',
       studentId: studentResult.rows[0].student_id,
       userId,
     });
@@ -373,9 +342,9 @@ app.post('/api/auth/register-student', validateStudentRegistration, async (req, 
     await client.query('ROLLBACK').catch(() => { });
     console.error('Error creating student:', error);
     if (error.code === '23505') {
-      res.status(400).json({ error: 'البريد الإلكتروني مستخدم بالفعل' });
+      res.status(400).json({ error: 'Email already exists' });
     } else {
-      res.status(500).json({ error: 'خطأ في إضافة الطالب' });
+      res.status(500).json({ error: 'Error creating student' });
     }
   } finally {
     client.release();
@@ -388,27 +357,18 @@ app.post('/api/auth/register-student', validateStudentRegistration, async (req, 
 
 app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
   const client = await pool.connect();
-  console.log(`--- [ DIAGNOSTIC ] --- Hit route for level: ${req.params.level}`);
   try {
     const { level } = req.params;
     const scheduleQuery = 'SELECT * FROM schedule_versions WHERE level = $1 AND is_active = true AND committee_approved = true LIMIT 1';
     const scheduleResult = await client.query(scheduleQuery, [level]);
-
     if (scheduleResult.rows.length === 0) {
-      console.log(`--- [ DIAGNOSTIC ] --- No active schedule found for level ${level}.`);
       return res.status(404).json({ message: `No active schedule found for level ${level}.` });
     }
-
     const activeSchedule = scheduleResult.rows[0];
-    res.json({
-      schedule: activeSchedule,
-      comments: []
-    });
-
+    res.json({ schedule: activeSchedule, comments: [] });
   } catch (error) {
-    console.error('--- [ DIAGNOSTIC ] --- CRASH DETECTED IN ROUTE:');
     console.error(error);
-    res.status(500).json({ message: 'Failed to fetch schedule data due to a server crash.' });
+    res.status(500).json({ message: 'Failed to fetch schedule data.' });
   } finally {
     client.release();
   }
@@ -456,12 +416,10 @@ app.put('/api/students/:id', authenticateToken, requireStaff, validateStudentUpd
   try {
     const { studentId, level } = req.validatedData;
     const query = `UPDATE students SET level = $1 WHERE student_id = $2 RETURNING student_id, level`;
-    const result = await client.query(query, [level, studentId]); 
-
+    const result = await client.query(query, [level, studentId]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found.' });
     }
-
     res.json({ success: true, message: 'Student level updated successfully!', student: result.rows[0] });
   } catch (error) {
     console.error('Error updating student:', error);
@@ -498,26 +456,14 @@ app.put('/api/student/level-up/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
-    const studentRes = await client.query(
-      'SELECT level, has_leveled_up FROM students WHERE student_id=$1',
-      [id]
-    );
-
-    if (studentRes.rows.length === 0)
-      return res.status(404).json({ error: 'Student not found' });
-
+    const studentRes = await client.query('SELECT level, has_leveled_up FROM students WHERE student_id=$1', [id]);
+    if (studentRes.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
     const student = studentRes.rows[0];
-
     if (student.has_leveled_up) {
       return res.status(400).json({ error: 'Level already increased once' });
     }
-
     const newLevel = student.level + 1;
-    await client.query(
-      'UPDATE students SET level=$1, has_leveled_up=true WHERE student_id=$2',
-      [newLevel, id]
-    );
-
+    await client.query('UPDATE students SET level=$1, has_leveled_up=true WHERE student_id=$2', [newLevel, id]);
     res.json({ success: true, message: `Level updated to ${newLevel}` });
   } catch (err) {
     console.error('Level-up error:', err);
@@ -536,7 +482,6 @@ app.get('/api/courses', async (req, res) => {
     const { level, department } = req.query;
     let query = 'SELECT * FROM courses';
     const queryParams = [];
-
     if (level) {
       queryParams.push(level);
       query += ` WHERE level = $${queryParams.length}`;
@@ -551,7 +496,7 @@ app.get('/api/courses', async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching courses:', error);
-    res.status(500).json({ error: 'خطأ في جلب المقررات' });
+    res.status(500).json({ error: 'Error fetching courses' });
   } finally {
     client.release();
   }
@@ -565,7 +510,7 @@ app.get('/api/courses/elective', async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching elective courses:', error);
-    res.status(500).json({ error: 'خطأ في جلب المقررات الاختيارية' });
+    res.status(500).json({ error: 'Error fetching elective courses' });
   } finally {
     client.release();
   }
@@ -575,22 +520,12 @@ app.post('/api/courses', validateUserRegistration, async (req, res) => {
   const client = await pool.connect();
   try {
     const { name, credit, level, is_elective, dept_code } = req.validatedData;
-    const query = `
-      INSERT INTO courses (name, credit, level, is_elective, dept_code)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING *
-    `;
-    const result = await client.query(query, [
-      name,
-      credit,
-      level,
-      is_elective || false,
-      dept_code,
-    ]);
-    res.json({ success: true, message: 'تمت إضافة المقرر بنجاح!', course: result.rows[0] });
+    const query = `INSERT INTO courses (name, credit, level, is_elective, dept_code) VALUES ($1, $2, $3, $4, $5) RETURNING *`;
+    const result = await client.query(query, [name, credit, level, is_elective || false, dept_code]);
+    res.json({ success: true, message: 'Course added successfully!', course: result.rows[0] });
   } catch (error) {
     console.error('Error creating course:', error);
-    res.status(500).json({ error: 'خطأ في إضافة المقرر' });
+    res.status(500).json({ error: 'Error adding course' });
   } finally {
     client.release();
   }
@@ -599,7 +534,6 @@ app.post('/api/courses', validateUserRegistration, async (req, res) => {
 // ============================================
 // VOTING & APPROVAL ROUTES
 // ============================================
-
 app.post('/api/vote', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -639,24 +573,13 @@ app.get('/api/votes/results', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const query = `
-            SELECT
-                c.course_id,
-                c.name,
-                c.is_approved,
-                s.level AS student_level,
-                COUNT(v.vote_id) AS vote_count
-            FROM
-                courses c
-            LEFT JOIN
-                votes v ON c.course_id = v.course_id
-            LEFT JOIN
-                students s ON v.student_id = s.student_id
-            WHERE
-                c.is_elective = true
-            GROUP BY
-                c.course_id, c.name, c.is_approved, s.level
-            ORDER BY
-                c.course_id, s.level;
+            SELECT c.course_id, c.name, c.is_approved, s.level AS student_level, COUNT(v.vote_id) AS vote_count
+            FROM courses c
+            LEFT JOIN votes v ON c.course_id = v.course_id
+            LEFT JOIN students s ON v.student_id = s.student_id
+            WHERE c.is_elective = true
+            GROUP BY c.course_id, c.name, c.is_approved, s.level
+            ORDER BY c.course_id, s.level;
         `;
     const result = await client.query(query);
     res.json(result.rows);
@@ -671,15 +594,11 @@ app.get('/api/votes/results', authenticateToken, async (req, res) => {
 app.get('/api/electives/approved', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const query = `
-      SELECT course_id, level
-      FROM approved_electives_by_level
-      ORDER BY level, course_id
-    `;
+    const query = `SELECT course_id, level FROM approved_electives_by_level ORDER BY level, course_id`;
     const result = await client.query(query);
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching approved electives by level:', error);
+    console.error('Error fetching approved electives:', error);
     res.status(500).json({ error: 'Failed to fetch approved electives.' });
   } finally {
     client.release();
@@ -690,12 +609,8 @@ app.post('/api/electives/approve', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { course_id, level } = req.body;
-    if (!course_id || !level) {
-      return res.status(400).json({ error: 'Course ID and Level are required.' });
-    }
-
+    if (!course_id || !level) return res.status(400).json({ error: 'Course ID and Level are required.' });
     await client.query('BEGIN');
-
     const insertQuery = `
             INSERT INTO approved_electives_by_level (course_id, level) 
             VALUES ($1, $2)
@@ -703,12 +618,11 @@ app.post('/api/electives/approve', authenticateToken, async (req, res) => {
         `;
     await client.query(insertQuery, [course_id, level]);
     await client.query('UPDATE courses SET is_approved = true WHERE course_id = $1', [course_id]);
-
     await client.query('COMMIT');
     res.json({ success: true, message: `Course ${course_id} approved for Level ${level}.` });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => { });
-    console.error('Error approving course for level:', error);
+    console.error('Error approving course:', error);
     res.status(500).json({ error: 'Failed to approve course.' });
   } finally {
     client.release();
@@ -719,35 +633,22 @@ app.delete('/api/electives/approve', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { course_id, level } = req.body;
-    if (!course_id || !level) {
-      return res.status(400).json({ error: 'Course ID and Level are required.' });
-    }
-
+    if (!course_id || !level) return res.status(400).json({ error: 'Course ID and Level are required.' });
     await client.query('BEGIN');
-
-    const deleteResult = await client.query(
-      'DELETE FROM approved_electives_by_level WHERE course_id = $1 AND level = $2 RETURNING *',
-      [course_id, level]
-    );
-
+    const deleteResult = await client.query('DELETE FROM approved_electives_by_level WHERE course_id = $1 AND level = $2 RETURNING *', [course_id, level]);
     if (deleteResult.rowCount === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Approved course record not found for the specified level.' });
+      return res.status(404).json({ error: 'Record not found.' });
     }
-
-    const remaining = await client.query(
-      'SELECT 1 FROM approved_electives_by_level WHERE course_id = $1 LIMIT 1',
-      [course_id]
-    );
+    const remaining = await client.query('SELECT 1 FROM approved_electives_by_level WHERE course_id = $1 LIMIT 1', [course_id]);
     if (remaining.rows.length === 0) {
       await client.query('UPDATE courses SET is_approved = false WHERE course_id = $1', [course_id]);
     }
-
     await client.query('COMMIT');
     res.json({ success: true, message: `Course ${course_id} removed from Level ${level}.` });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => { });
-    console.error('Error removing approved course level:', error);
+    console.error('Error removing approved course:', error);
     res.status(500).json({ error: 'Failed to remove approved course.' });
   } finally {
     client.release();
@@ -765,7 +666,7 @@ app.get('/api/schedules', async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching schedules:', error);
-    res.status(500).json({ error: 'خطأ في جلب الجداول' });
+    res.status(500).json({ error: 'Error fetching schedules' });
   } finally {
     client.release();
   }
@@ -775,16 +676,12 @@ app.post('/api/schedules', validateUserRegistration, async (req, res) => {
   const client = await pool.connect();
   try {
     const { group_number, level } = req.validatedData;
-    const query = `
-      INSERT INTO schedules (group_number, level)
-      VALUES ($1, $2)
-      RETURNING *
-    `;
+    const query = `INSERT INTO schedules (group_number, level) VALUES ($1, $2) RETURNING *`;
     const result = await client.query(query, [group_number, level]);
-    res.json({ success: true, message: 'تمت إضافة الجدول بنجاح!', schedule: result.rows[0] });
+    res.json({ success: true, message: 'Schedule added successfully!', schedule: result.rows[0] });
   } catch (error) {
     console.error('Error creating schedule:', error);
-    res.status(500).json({ error: 'خطأ في إضافة الجدول' });
+    res.status(500).json({ error: 'Error creating schedule' });
   } finally {
     client.release();
   }
@@ -809,8 +706,8 @@ app.get('/api/sections', async (req, res) => {
     }));
     res.json(sectionsWithCastedLevel);
   } catch (error) {
-    console.error('Error fetching sections with course info:', error);
-    res.status(500).json({ error: 'خطأ في جلب الشعب مع معلومات المقرر' });
+    console.error('Error fetching sections:', error);
+    res.status(500).json({ error: 'Error fetching sections' });
   } finally {
     client.release();
   }
@@ -823,9 +720,7 @@ app.get('/api/schedule-versions', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { level } = req.query;
-    if (!level) {
-      return res.status(400).json({ message: 'Level query parameter is required.' });
-    }
+    if (!level) return res.status(400).json({ message: 'Level required.' });
     const query = 'SELECT * FROM schedule_versions WHERE level = $1 ORDER BY created_at DESC';
     const result = await client.query(query, [level]);
     res.json(result.rows);
@@ -841,9 +736,7 @@ app.post('/api/schedule-versions', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { level, student_count, version_comment, sections } = req.body;
-    if (!level || !sections) {
-      return res.status(400).json({ message: 'Level and sections are required.' });
-    }
+    if (!level || !sections) return res.status(400).json({ message: 'Level and sections required.' });
     const query = `
       INSERT INTO schedule_versions (level, student_count, version_comment, sections)
       VALUES ($1, $2, $3, $4)
@@ -869,9 +762,7 @@ app.patch('/api/schedule-versions/:id/scheduler-approve', authenticateToken, req
       'UPDATE schedule_versions SET scheduler_approved = $1 WHERE id = $2 RETURNING *',
       [value, id]
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Schedule version not found.' });
-    }
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Schedule version not found.' });
     res.json({ success: true, version: result.rows[0] });
   } catch (error) {
     console.error('Error updating scheduler approval:', error);
@@ -884,16 +775,13 @@ app.patch('/api/schedule-versions/:id/scheduler-approve', authenticateToken, req
 app.get('/api/schedule-versions/pending-committee', authenticateToken, requireCommitteeRole, async (req, res) => {
   const client = await pool.connect();
   try {
-    console.log('[pending-committee] user:', req.user?.email, 'role:', req.user?.role);
     const sql = `
       SELECT *
       FROM schedule_versions
       WHERE COALESCE(scheduler_approved, false) = true
          OR is_active = true
       ORDER BY created_at DESC`;
-    console.log('[pending-committee] SQL:', sql);
     const result = await client.query(sql);
-    console.log('[pending-committee] rows:', result.rowCount);
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching pending committee schedules:', error);
@@ -909,31 +797,21 @@ app.patch('/api/schedule-versions/:id/committee-review', authenticateToken, requ
     const { id } = req.params;
     const { approved, committee_comment } = req.body || {};
     const value = approved === true;
-    console.log('[committee-review] user:', req.user?.email, 'role:', req.user?.role);
-    console.log('[committee-review] id:', id, 'approved:', value, 'comment:', committee_comment || null);
-
     await client.query('BEGIN');
-
     const lvlRes = await client.query('SELECT level FROM schedule_versions WHERE id = $1', [id]);
     if (lvlRes.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Schedule version not found.' });
     }
     const level = lvlRes.rows[0].level;
-
     if (value) {
       await client.query('UPDATE schedule_versions SET committee_approved = false WHERE level = $1', [level]);
     }
-
     const updRes = await client.query(
       'UPDATE schedule_versions SET committee_approved = $1, committee_comment = $2 WHERE id = $3 RETURNING *',
       [value, committee_comment || null, id]
     );
-
     await client.query('COMMIT');
-
-    console.log('[committee-review] level:', level, 'updated rows:', updRes.rowCount);
-
     res.json({ success: true, version: updRes.rows[0] });
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch { }
@@ -949,23 +827,10 @@ app.patch('/api/schedule-versions/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { version_comment } = req.body;
-
-    if (!version_comment || !version_comment.trim()) {
-      return res.status(400).json({ message: 'Version name is required.' });
-    }
-
-    const query = `
-      UPDATE schedule_versions
-      SET version_comment = $1
-      WHERE id = $2
-      RETURNING *
-    `;
+    if (!version_comment || !version_comment.trim()) return res.status(400).json({ message: 'Version name is required.' });
+    const query = `UPDATE schedule_versions SET version_comment = $1 WHERE id = $2 RETURNING *`;
     const result = await client.query(query, [version_comment.trim(), id]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Schedule version not found.' });
-    }
-
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Schedule version not found.' });
     res.json({ success: true, version: result.rows[0] });
   } catch (error) {
     console.error('Error renaming schedule version:', error);
@@ -981,9 +846,7 @@ app.patch('/api/schedule-versions/:id/activate', authenticateToken, async (req, 
     const { id } = req.params;
     await client.query('BEGIN');
     const levelResult = await client.query('SELECT level FROM schedule_versions WHERE id = $1', [id]);
-    if (levelResult.rows.length === 0) {
-      throw new Error('Version not found.');
-    }
+    if (levelResult.rows.length === 0) throw new Error('Version not found.');
     const { level } = levelResult.rows[0];
     await client.query('UPDATE schedule_versions SET is_active = false WHERE level = $1', [level]);
     await client.query('UPDATE schedule_versions SET is_active = true WHERE id = $1', [id]);
@@ -1004,18 +867,12 @@ app.patch('/api/schedule-versions/:id/activate', authenticateToken, async (req, 
 app.get('/api/statistics', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const studentsQuery = "SELECT COUNT(*) FROM users WHERE role = 'student'";
-    const votesQuery = 'SELECT COUNT(*) FROM votes';
-    const votingStudentsQuery = 'SELECT COUNT(DISTINCT student_id) FROM votes';
-    const commentsQuery = 'SELECT COUNT(*) FROM comments';
-
     const [studentsResult, votesResult, votingStudentsResult, commentsResult] = await Promise.all([
-      client.query(studentsQuery),
-      client.query(votesQuery),
-      client.query(votingStudentsQuery),
-      client.query(commentsQuery),
+      client.query("SELECT COUNT(*) FROM users WHERE role = 'student'"),
+      client.query('SELECT COUNT(*) FROM votes'),
+      client.query('SELECT COUNT(DISTINCT student_id) FROM votes'),
+      client.query('SELECT COUNT(*) FROM comments'),
     ]);
-
     const totalStudents = parseInt(studentsResult.rows[0].count, 10);
     const totalVotes = parseInt(votesResult.rows[0].count, 10);
     const votingStudents = parseInt(votingStudentsResult.rows[0].count, 10);
@@ -1039,130 +896,69 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
 });
 
 // ============================================
-// AI SCHEDULER ROUTE
+// AI SCHEDULER ROUTE (UPDATED for gemini-pro)
 // ============================================
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { level, currentLevel, currentSchedule, user_command } = req.body;
-    const scheduleLevel = level || currentLevel;
-
+    
+    // Basic data gathering
     const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
     const rules = rulesResult.rows.map(r => r.text);
-
     const coursesResult = await client.query(
       `SELECT c.course_id, c.name, c.credit, c.dept_code 
-     FROM courses c
-     LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
-     WHERE (c.level = $1 AND c.dept_code = 'SE') OR (aebl.level = $1)`,
+       FROM courses c
+       LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
+       WHERE (c.level = $1 AND c.dept_code = 'SE') OR (aebl.level = $1)`,
       [currentLevel]
     );
     const requiredCourses = coursesResult.rows;
-
     if (requiredCourses.length === 0) {
-      return res.status(404).json({
-        error: `No Software Engineering courses found for level ${currentLevel}.`
-      });
+      return res.status(404).json({ error: `No Software Engineering courses found for level ${currentLevel}.` });
     }
-
     const fixedSections = currentSchedule.sections.filter(sec => sec.dept_code !== 'SE');
     const occupiedSlots = fixedSections.map(sec =>
-      `${sec.day_code} from ${sec.start_time.substring(0, 5)} to ${sec.end_time.substring(0, 5)} for ${sec.dept_code}`
+      `${sec.day_code} from ${sec.start_time?.substring(0, 5)} to ${sec.end_time?.substring(0, 5)} for ${sec.dept_code}`
     );
 
-    const finalCommand = user_command ||
-      `Please schedule the provided SE courses optimally, avoiding all occupied slots and following all rules.`;
-
-    const randomSeed = Math.random();
-
-    const systemInstruction = `
-You are a university academic scheduler AI.
-Your task is to schedule the provided list of Software Engineering (SE) courses into available slots,
-following all rules strictly.
-You MUST treat the 'occupied slots' list as fixed and unmovable.
-`;
-
+    // Prepare prompt parts
+    const systemInstruction = `You are a university academic scheduler AI. Your task is to schedule the provided list of Software Engineering (SE) courses into available slots, following all rules strictly. You MUST treat the 'occupied slots' list as fixed and unmovable.`;
     const userQuery = `
-You are a university academic scheduler AI.
+      Objective: Generate a weekly schedule for Level ${currentLevel} students.
+      Rules:
+      1. Each course's total scheduled hours must equal its credit value.
+      2. Prefer multiple shorter blocks (1-2 hours). Avoid 3-hour blocks unless necessary.
+      3. Spread sessions across different days.
+      4. Start/End times between 08:00 and 15:00.
+      5. No overlap with occupied slots.
+      6. Use valid days: S, M, T, W, H.
+      7. Output valid JSON array ONLY.
 
-🎯 **Objective:** Generate a weekly schedule for the Software Engineering (SE) courses for Level ${currentLevel} students.
-Each SE course must be scheduled according to its total credit hours, distributed across the available weekly time slots.
-
-📘 **Course Scheduling Rules:**
-1. Each course's total scheduled hours must exactly equal its credit value.
-2. Split the credit hours intelligently across the week:
-   - Prefer multiple shorter blocks (1-hour or 2-hour sessions) rather than long continuous sessions.
-   - Avoid any 3-hour continuous sessions unless there is absolutely no alternative.
-3. Spread sessions across different days when possible (e.g., a 3-credit course could meet M/W/Th or S/T/W).
-4. Maintain realistic start and end times (08:00 to 15:00).
-5. No overlap between SE course sessions and the "occupied slots" listed below.
-6. Try to minimize idle gaps within the same day.
-7. Use only valid days: S, M, T, W, H.
-8. Each session must have "section_type": "LECTURE".
-
-💡 **Scheduling Philosophy:**
-Think like a human academic scheduler:
-- Maintain balance between mornings and afternoons.
-- Avoid scheduling the same course twice in the same day (unless it's a 2-hour block).
-- Distribute sessions fairly among available time slots.
-
-🧩 **Required SE Courses (with credit hours):**
-${JSON.stringify(requiredCourses.map(c => ({
-      course_id: c.course_id,
-      name: c.name,
-      credit: c.credit,
-      section_type: 'LECTURE'
-    })), null, 2)}
-
-🚫 **Occupied Slots (Non-SE official courses):**
-${JSON.stringify(occupiedSlots, null, 2)}
-
-🧠 **Active Scheduling Constraints (Rules):**
-${JSON.stringify(rules, null, 2)}
-
-🔄 **Variation Seed:** ${randomSeed}
-
-✅ **Output Format (JSON ONLY):**
-Return a valid JSON array of objects, each representing one SE course block:
-[
-  {
-    "course_id": number,
-    "day": "S" | "M" | "T" | "W" | "H",
-    "start_time": "HH:MM",
-    "end_time": "HH:MM",
-    "section_type": "LECTURE"
-  }
-]
-Return only this JSON array, with no explanation text.
-`;
+      Required SE Courses: ${JSON.stringify(requiredCourses.map(c => ({ course_id: c.course_id, name: c.name, credit: c.credit, section_type: 'LECTURE' })))}
+      Occupied Slots: ${JSON.stringify(occupiedSlots)}
+      Constraints: ${JSON.stringify(rules)}
+      
+      Output Format: JSON Array of objects: [{ "course_id": number, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }]
+    `;
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return res.status(500).json({ error: 'GEMINI_API_KEY is not configured.' });
     }
 
+    // ✅✅✅ CRITICAL AI FIX ✅✅✅
+    // Using gemini-pro with merged payload (Safest option)
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
-
-        const payload = {
-      contents: [{ parts: [{ text: userQuery }] }],
-      systemInstruction: { parts: [{ text: systemInstruction }] },
+    
+    const payload = {
+      contents: [{
+        parts: [{
+          text: `${systemInstruction}\n\n${userQuery}`
+        }]
+      }],
       generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.9,
-        responseSchema: {
-          type: 'ARRAY',
-          items: {
-            type: 'OBJECT',
-            properties: {
-              course_id: { type: 'NUMBER' },
-              day: { type: 'STRING' },
-              start_time: { type: 'STRING' },
-              end_time: { type: 'STRING' },
-              section_type: { type: 'STRING' }
-            },
-            required: ['course_id', 'day', 'start_time', 'end_time', 'section_type']
-          }
-        }
+        temperature: 0.9
       }
     };
 
@@ -1173,15 +969,16 @@ Return only this JSON array, with no explanation text.
     });
 
     const result = await response.json();
-    const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!jsonText) {
-      console.error('AI Response Debug:', JSON.stringify(result, null, 2));
-      throw new Error('AI did not return a valid schedule. Please check the server logs.');
+    if (!result.candidates || result.candidates.length === 0) {
+       console.error('AI Response Error:', JSON.stringify(result, null, 2));
+       throw new Error('AI did not return any candidates. Check quota/key.');
     }
 
-    const generatedSeSchedule = JSON.parse(jsonText);
+    let jsonText = result.candidates[0].content.parts[0].text;
+    // Clean up markdown if present
+    jsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
 
+    const generatedSeSchedule = JSON.parse(jsonText);
     const correctedSeSchedule = generatedSeSchedule.map(section => ({
       ...section,
       day_code: section.day,
@@ -1191,12 +988,7 @@ Return only this JSON array, with no explanation text.
     }));
 
     const finalSchedule = [...fixedSections, ...correctedSeSchedule];
-
-    res.json({
-      success: true,
-      message: 'Schedule generated by AI.',
-      schedule: finalSchedule
-    });
+    res.json({ success: true, message: 'Schedule generated by AI.', schedule: finalSchedule });
 
   } catch (error) {
     console.error('AI Schedule Generation error:', error);
@@ -1207,7 +999,7 @@ Return only this JSON array, with no explanation text.
 });
 
 // ============================================
-// RULES ROUTES
+// RULES & COMMENTS ROUTES
 // ============================================
 app.get('/api/rules', async (req, res) => {
   const client = await pool.connect();
@@ -1216,7 +1008,6 @@ app.get('/api/rules', async (req, res) => {
     const result = await client.query(query);
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching rules:', error);
     res.status(500).json({ error: 'Failed to fetch rules.' });
   } finally {
     client.release();
@@ -1227,12 +1018,10 @@ app.post('/api/rules', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { text } = req.body;
-    if (!text) return res.status(400).json({ error: 'Rule text is required.' });
     const query = 'INSERT INTO rules (text) VALUES ($1) RETURNING *';
     const result = await client.query(query, [text]);
     res.json({ success: true, rule: result.rows[0] });
   } catch (error) {
-    console.error('Error adding rule:', error);
     res.status(500).json({ error: 'Failed to add rule.' });
   } finally {
     client.release();
@@ -1247,53 +1036,20 @@ app.delete('/api/rules/:ruleId', authenticateToken, async (req, res) => {
     await client.query(query, [ruleId]);
     res.json({ success: true, message: 'Rule deleted.' });
   } catch (error) {
-    console.error('Error deleting rule:', error);
     res.status(500).json({ error: 'Failed to delete rule.' });
   } finally {
     client.release();
   }
 });
 
-app.delete('/api/schedule-versions/:id', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { id } = req.params;
-    const versionResult = await client.query('SELECT is_active FROM schedule_versions WHERE id = $1', [id]);
-
-    if (versionResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Schedule version not found.' });
-    }
-
-    if (versionResult.rows[0].is_active) {
-      return res.status(400).json({ message: 'Cannot delete an active version. Activate another version first.' });
-    }
-
-    await client.query('DELETE FROM schedule_versions WHERE id = $1', [id]);
-    res.json({ success: true, message: 'Schedule version deleted.' });
-  } catch (error) {
-    console.error('Error deleting schedule version:', error);
-    res.status(500).json({ message: 'Failed to delete schedule version.' });
-  } finally {
-    client.release();
-  }
-});
-
-// ============================================
-// COMMENTS ROUTES (Correctly Ordered)
-// ============================================
-
 app.post('/api/comments', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { student_id, schedule_version_id, comment } = req.body;
-    if (!student_id || !schedule_version_id || !comment) {
-      return res.status(400).json({ error: 'student_id, schedule_version_id, and comment are required.' });
-    }
     const insertQuery = `INSERT INTO comments (student_id, schedule_version_id, comment) VALUES ($1, $2, $3) RETURNING *;`;
     const result = await client.query(insertQuery, [student_id, schedule_version_id, comment]);
     res.status(201).json({ success: true, message: 'Comment added successfully.', comment: result.rows[0] });
   } catch (error) {
-    console.error('Error adding comment:', error);
     res.status(500).json({ error: 'Failed to add comment. Check server logs for details.' });
   } finally {
     client.release();
@@ -1304,15 +1060,7 @@ app.get('/api/comments/all', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const query = `
-            SELECT 
-                c.id as comment_id, 
-                c.comment, 
-                c.created_at,
-                s.student_id,
-                s.level as student_level,
-                u.name as student_name,
-                sv.id as schedule_version_id,
-                sv.version_comment
+            SELECT c.id as comment_id, c.comment, c.created_at, s.student_id, s.level as student_level, u.name as student_name, sv.id as schedule_version_id, sv.version_comment
             FROM comments c
             LEFT JOIN students s ON c.student_id = s.student_id
             LEFT JOIN users u ON s.user_id = u.user_id
@@ -1323,7 +1071,6 @@ app.get('/api/comments/all', authenticateToken, async (req, res) => {
     const result = await client.query(query);
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching all comments:', error);
     res.status(500).json({ error: 'Failed to fetch all comments.' });
   } finally {
     client.release();
@@ -1345,56 +1092,24 @@ app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res
     const result = await client.query(query, [schedule_version_id]);
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching comments for schedule:', error);
     res.status(500).json({ error: 'Failed to fetch comments.' });
   } finally {
     client.release();
   }
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK-V2', timestamp: new Date().toISOString() });
-});
-
-app.get('/api/debug/tables', authenticateToken, requireStaff, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const query = `
-      SELECT table_schema, table_name
-      FROM information_schema.tables
-      WHERE table_type = 'BASE TABLE'
-        AND table_schema NOT IN ('pg_catalog', 'information_schema')
-      ORDER BY table_schema, table_name;
-    `;
-    const result = await client.query(query);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error listing tables:', error);
-    res.status(500).json({ error: 'Failed to list database tables.' });
-  } finally {
-    client.release();
-  }
-});
-
-// ============================================
-// FACULTY COMMENTS ROUTES
-// ============================================
-
+// Faculty Comments
 app.get('/api/schedule-versions/approved', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { level } = req.query || {};
     let sql = 'SELECT * FROM schedule_versions WHERE committee_approved = true';
     const params = [];
-    if (level) {
-      params.push(level);
-      sql += ' AND level = $1';
-    }
+    if (level) { params.push(level); sql += ' AND level = $1'; }
     sql += ' ORDER BY created_at DESC';
     const result = await client.query(sql, params);
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching approved schedule versions:', error);
     res.status(500).json({ message: 'Failed to fetch approved schedule versions.' });
   } finally {
     client.release();
@@ -1405,16 +1120,10 @@ app.get('/api/schedule-versions/:id/faculty-comments', authenticateToken, requir
   const client = await pool.connect();
   try {
     const { id } = req.params;
-    const sql = `
-      SELECT c.id, c.comment, c.created_at, u.user_id, u.name AS faculty_name, u.email AS faculty_email
-      FROM comments c
-      JOIN users u ON c.user_id = u.user_id
-      WHERE c.schedule_version_id = $1 AND c.user_id IS NOT NULL
-      ORDER BY c.created_at DESC`;
+    const sql = `SELECT c.id, c.comment, c.created_at, u.user_id, u.name AS faculty_name, u.email AS faculty_email FROM comments c JOIN users u ON c.user_id = u.user_id WHERE c.schedule_version_id = $1 AND c.user_id IS NOT NULL ORDER BY c.created_at DESC`;
     const result = await client.query(sql, [id]);
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching faculty comments:', error);
     res.status(500).json({ message: 'Failed to fetch faculty comments.' });
   } finally {
     client.release();
@@ -1424,19 +1133,14 @@ app.get('/api/schedule-versions/:id/faculty-comments', authenticateToken, requir
 app.post('/api/schedule-versions/:id/faculty-comments', authenticateToken, requireFaculty, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { id } = req.params; 
+    const { id } = req.params;
     const { comment } = req.body || {};
-    if (!comment || !String(comment).trim()) {
-      return res.status(400).json({ message: 'Comment is required.' });
-    }
+    if (!comment || !String(comment).trim()) return res.status(400).json({ message: 'Comment is required.' });
     const userId = req.user?.id;
-    const insert = `INSERT INTO comments (schedule_version_id, user_id, comment)
-                    VALUES ($1, $2, $3)
-                    RETURNING id, schedule_version_id, user_id, comment, created_at`;
+    const insert = `INSERT INTO comments (schedule_version_id, user_id, comment) VALUES ($1, $2, $3) RETURNING id, schedule_version_id, user_id, comment, created_at`;
     const result = await client.query(insert, [id, userId, String(comment).trim()]);
     res.status(201).json({ success: true, comment: result.rows[0] });
   } catch (error) {
-    console.error('Error creating faculty comment:', error);
     res.status(500).json({ message: 'Failed to create faculty comment.' });
   } finally {
     client.release();
@@ -1448,50 +1152,19 @@ app.get('/api/schedule-versions/:id/my-faculty-comments', authenticateToken, req
   try {
     const { id } = req.params;
     const userId = req.user?.id;
-    const sql = `
-      SELECT c.id, c.comment, c.created_at
-      FROM comments c
-      WHERE c.schedule_version_id = $1 AND c.user_id = $2
-      ORDER BY c.created_at DESC`;
+    const sql = `SELECT c.id, c.comment, c.created_at FROM comments c WHERE c.schedule_version_id = $1 AND c.user_id = $2 ORDER BY c.created_at DESC`;
     const result = await client.query(sql, [id, userId]);
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching my faculty comments:', error);
     res.status(500).json({ message: 'Failed to fetch my faculty comments.' });
   } finally {
     client.release();
   }
 });
 
-app.get('/api/debug/columns', authenticateToken, requireStaff, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { table, schema } = req.query;
-    if (!table) {
-      return res.status(400).json({ error: 'Query param "table" is required.' });
-    }
-    const sch = schema && String(schema).trim() ? String(schema).trim() : 'public';
-    const query = `
-      SELECT 
-        column_name,
-        data_type,
-        is_nullable,
-        column_default,
-        character_maximum_length,
-        numeric_precision,
-        numeric_scale
-      FROM information_schema.columns
-      WHERE table_schema = $1 AND table_name = $2
-      ORDER BY ordinal_position
-    `;
-    const result = await client.query(query, [sch, String(table).trim()]);
-    res.json({ schema: sch, table: String(table).trim(), columns: result.rows });
-  } catch (error) {
-    console.error('Error listing columns:', error);
-    res.status(500).json({ error: 'Failed to list table columns.' });
-  } finally {
-    client.release();
-  }
+// Utils
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK-V2', timestamp: new Date().toISOString() });
 });
 
 app.use((error, req, res, next) => {
