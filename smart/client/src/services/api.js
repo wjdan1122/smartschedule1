@@ -1,10 +1,9 @@
 // smart3/client/src/services/api.js
 import axios from 'axios';
 
-// 1. التعديل: الرابط الأساسي الآن لا يحتوي على /api
+// 👇 التعديل هنا: وضعنا رابط سيرفر Render الجديد
 const api = axios.create({
-  // الكود القديم
-  baseURL: process.env.REACT_APP_API_BASE_URL,
+  baseURL: 'https://smartschedule1-b64l.onrender.com', 
   headers: {
     'Content-Type': 'application/json'
   }
@@ -23,8 +22,6 @@ api.interceptors.request.use(
     return Promise.reject(error);
   }
 );
-
-// 2. التعديل: تمت إضافة /api إلى كل المسارات بالأسفل
 
 // Authentication API
 export const authAPI = {
