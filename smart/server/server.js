@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const WebSocket = require('ws');
 const { setupWSConnection } = require('y-websocket/bin/utils');
 require('dotenv').config();
+
 // ✨ Phase 1: Import validation and authentication middleware
 const {
   requireScheduler,
@@ -39,25 +40,32 @@ const {
   validateRule,
   validateIdParam
 } = require('./middleware/validation');
+
 const app = express();
 const server = http.createServer(app);
 const COLLAB_NAMESPACE = 'collaboration';
 const wss = new WebSocket.Server({ server });
+
 // 👇 run backend on 5000 (not 3000)
 const PORT = process.env.PORT || 5000;
+
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
-
 
 // Middleware
 app.use(
   cors({
-    // 👇 allow both 3000 and 3001 (React may choose 3001)
-    origin: ['http://localhost:3000', 'http://localhost:3001',
-      'https://smartschedule1.onrender.com', 'https://smartschedule1-1.onrender.com', 'https://smartschedule1-three.vercel.app'],
+    // 👇 تم تحديث الروابط لتشمل موقعك الجديد على Netlify
+    origin: [
+      'http://localhost:3000', 
+      'http://localhost:3001',
+      'https://smartschedule1-b64l.onrender.com', // رابط السيرفر
+      'https://endearing-kulfi-c96605.netlify.app' // 👈 رابط الواجهة الجديد
+    ],
     credentials: true,
   })
 );
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -77,7 +85,7 @@ wss.on('error', (err) => {
   console.error('[collaboration] websocket error:', err);
 });
 
-// PostgreSQL Connection Pool (supports hosted providers like Supabase)
+// PostgreSQL Connection Pool (Detailed configuration matches your Render env vars)
 const sslConfig = process.env.DB_SSL === 'true' ? { require: true, rejectUnauthorized: false } : undefined;
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -153,17 +161,6 @@ const hasRoleLike = (user, ...patterns) => {
   return patterns.some((p) => role.includes(p));
 };
 
-
-
-
-
-// Allow either scheduler or committee (staff-only helper)
-
-// Faculty-only helper
-
-// Middleware to verify committee access
-
-
 // ============================================
 // AUTHENTICATION ROUTES
 // ============================================
@@ -208,7 +205,6 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
       let level = user.level;
       let is_ir = user.is_ir;
 
-      // If student_id wasn't found in the join (maybe student not in table yet)
       if (!studentId) {
         const studentResult = await client.query(
           'SELECT student_id, level, is_ir FROM students WHERE user_id = $1',
@@ -390,14 +386,11 @@ app.post('/api/auth/register-student', validateStudentRegistration, async (req, 
 // STUDENT ROUTES
 // ============================================
 
-// Get the active schedule for a specific level (for StudentDashboard)
 app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   console.log(`--- [ DIAGNOSTIC ] --- Hit route for level: ${req.params.level}`);
   try {
     const { level } = req.params;
-
-    // Only expose to students when the version is active and committee approved
     const scheduleQuery = 'SELECT * FROM schedule_versions WHERE level = $1 AND is_active = true AND committee_approved = true LIMIT 1';
     const scheduleResult = await client.query(scheduleQuery, [level]);
 
@@ -407,10 +400,6 @@ app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
     }
 
     const activeSchedule = scheduleResult.rows[0];
-
-    console.log('--- [ DIAGNOSTIC ] --- Found schedule. Data BEFORE sending:');
-    console.log(activeSchedule);
-
     res.json({
       schedule: activeSchedule,
       comments: []
@@ -425,7 +414,6 @@ app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
   }
 });
 
-// Get a single student's full details (can be used in profiles)
 app.get('/api/student/:user_id', authenticateToken, requireOwnDataOrStaff, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -449,7 +437,6 @@ app.get('/api/student/:user_id', authenticateToken, requireOwnDataOrStaff, async
   }
 });
 
-// Get all students (for ManageStudents page)
 app.get('/api/students', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -464,16 +451,12 @@ app.get('/api/students', authenticateToken, async (req, res) => {
   }
 });
 
-// Update a student's level
 app.put('/api/students/:id', authenticateToken, requireStaff, validateStudentUpdate, async (req, res) => {
   const client = await pool.connect();
   try {
     const { studentId, level } = req.validatedData;
-
-    // No manual validation needed - middleware handles it!
-
     const query = `UPDATE students SET level = $1 WHERE student_id = $2 RETURNING student_id, level`;
-    const result = await client.query(query, [level, studentId]); // Changed 'id' to 'studentId'
+    const result = await client.query(query, [level, studentId]); 
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found.' });
@@ -488,7 +471,6 @@ app.put('/api/students/:id', authenticateToken, requireStaff, validateStudentUpd
   }
 });
 
-// Delete a student
 app.delete('/api/students/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -512,13 +494,10 @@ app.delete('/api/students/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ رفع المستوى لمرة واحدة فقط
 app.put('/api/student/level-up/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
-
-    // التحقق من المستوى الحالي
     const studentRes = await client.query(
       'SELECT level, has_leveled_up FROM students WHERE student_id=$1',
       [id]
@@ -529,12 +508,10 @@ app.put('/api/student/level-up/:id', authenticateToken, async (req, res) => {
 
     const student = studentRes.rows[0];
 
-    // التحقق إذا سبق رفع المستوى من قبل
     if (student.has_leveled_up) {
       return res.status(400).json({ error: 'Level already increased once' });
     }
 
-    // رفع المستوى وتحديث حالة has_leveled_up
     const newLevel = student.level + 1;
     await client.query(
       'UPDATE students SET level=$1, has_leveled_up=true WHERE student_id=$2',
@@ -623,12 +600,10 @@ app.post('/api/courses', validateUserRegistration, async (req, res) => {
 // VOTING & APPROVAL ROUTES
 // ============================================
 
-// Allows a student to cast or update a vote
 app.post('/api/vote', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { student_id, course_id, vote_value } = req.body;
-    // Using ON CONFLICT for an efficient upsert
     const query = `
         INSERT INTO votes (student_id, course_id, vote_value)
         VALUES ($1, $2, $3)
@@ -645,7 +620,6 @@ app.post('/api/vote', authenticateToken, async (req, res) => {
   }
 });
 
-// --- NEW: Check a student's existing votes ---
 app.get('/api/votes/student/:student_id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -694,7 +668,6 @@ app.get('/api/votes/results', authenticateToken, async (req, res) => {
   }
 });
 
-// --- Approve an elective course FOR A SPECIFIC LEVEL ---
 app.get('/api/electives/approved', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -886,7 +859,6 @@ app.post('/api/schedule-versions', authenticateToken, async (req, res) => {
   }
 });
 
-// Mark a schedule version as approved by the scheduler (stage 1)
 app.patch('/api/schedule-versions/:id/scheduler-approve', authenticateToken, requireScheduler, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -909,12 +881,10 @@ app.patch('/api/schedule-versions/:id/scheduler-approve', authenticateToken, req
   }
 });
 
-// List all versions pending Load Committee review (stage 2)
 app.get('/api/schedule-versions/pending-committee', authenticateToken, requireCommitteeRole, async (req, res) => {
   const client = await pool.connect();
   try {
     console.log('[pending-committee] user:', req.user?.email, 'role:', req.user?.role);
-    // Show every version sent by scheduler, regardless of committee status or active flag
     const sql = `
       SELECT *
       FROM schedule_versions
@@ -933,19 +903,17 @@ app.get('/api/schedule-versions/pending-committee', authenticateToken, requireCo
   }
 });
 
-// Load Committee review: approve or request changes, with optional comment
 app.patch('/api/schedule-versions/:id/committee-review', authenticateToken, requireCommitteeRole, async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
     const { approved, committee_comment } = req.body || {};
-    const value = approved === true; // default false when not explicitly true
+    const value = approved === true;
     console.log('[committee-review] user:', req.user?.email, 'role:', req.user?.role);
     console.log('[committee-review] id:', id, 'approved:', value, 'comment:', committee_comment || null);
 
     await client.query('BEGIN');
 
-    // Find level of this version
     const lvlRes = await client.query('SELECT level FROM schedule_versions WHERE id = $1', [id]);
     if (lvlRes.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -954,7 +922,6 @@ app.patch('/api/schedule-versions/:id/committee-review', authenticateToken, requ
     const level = lvlRes.rows[0].level;
 
     if (value) {
-      // Enforce only one approved per level: unapprove others then approve this one
       await client.query('UPDATE schedule_versions SET committee_approved = false WHERE level = $1', [level]);
     }
 
@@ -1032,7 +999,7 @@ app.patch('/api/schedule-versions/:id/activate', authenticateToken, async (req, 
 });
 
 // ============================================
-// STATISTICS ROUTES (Updated)
+// STATISTICS ROUTES
 // ============================================
 app.get('/api/statistics', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -1315,7 +1282,6 @@ app.delete('/api/schedule-versions/:id', authenticateToken, async (req, res) => 
 // COMMENTS ROUTES (Correctly Ordered)
 // ============================================
 
-// --- This route handles POSTing a new comment ---
 app.post('/api/comments', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1334,7 +1300,6 @@ app.post('/api/comments', authenticateToken, async (req, res) => {
   }
 });
 
-// --- This route gets ALL comments for the admin dashboard ---
 app.get('/api/comments/all', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1352,7 +1317,7 @@ app.get('/api/comments/all', authenticateToken, async (req, res) => {
             LEFT JOIN students s ON c.student_id = s.student_id
             LEFT JOIN users u ON s.user_id = u.user_id
             LEFT JOIN schedule_versions sv ON c.schedule_version_id = sv.id
-            WHERE c.user_id IS NULL -- exclude faculty comments
+            WHERE c.user_id IS NULL 
             ORDER BY c.created_at DESC;
         `;
     const result = await client.query(query);
@@ -1365,7 +1330,6 @@ app.get('/api/comments/all', authenticateToken, async (req, res) => {
   }
 });
 
-// --- This route gets comments for a SPECIFIC schedule version ---
 app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1375,7 +1339,7 @@ app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res
       FROM comments c
       JOIN students s ON c.student_id = s.student_id
       JOIN users u ON s.user_id = u.user_id
-      WHERE c.schedule_version_id = $1 AND c.user_id IS NULL -- students only
+      WHERE c.schedule_version_id = $1 AND c.user_id IS NULL 
       ORDER BY c.created_at DESC
     `;
     const result = await client.query(query, [schedule_version_id]);
@@ -1388,15 +1352,10 @@ app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res
   }
 });
 
-// ============================================
-// HEALTH CHECK & FINAL MIDDLEWARE
-// ============================================
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK-V2', timestamp: new Date().toISOString() });
 });
-// ============================================
-// TEMP DIAGNOSTIC: List database tables (remove after verification)
-// ============================================
+
 app.get('/api/debug/tables', authenticateToken, requireStaff, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1421,7 +1380,6 @@ app.get('/api/debug/tables', authenticateToken, requireStaff, async (req, res) =
 // FACULTY COMMENTS ROUTES
 // ============================================
 
-// Get all committee-approved versions (optionally filter by level)
 app.get('/api/schedule-versions/approved', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1443,7 +1401,6 @@ app.get('/api/schedule-versions/approved', authenticateToken, async (req, res) =
   }
 });
 
-// Fetch faculty comments for a specific schedule version (stored in comments table with user_id)
 app.get('/api/schedule-versions/:id/faculty-comments', authenticateToken, requireCommitteeRole, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1464,11 +1421,10 @@ app.get('/api/schedule-versions/:id/faculty-comments', authenticateToken, requir
   }
 });
 
-// Post a new faculty comment (faculty only) into comments table
 app.post('/api/schedule-versions/:id/faculty-comments', authenticateToken, requireFaculty, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { id } = req.params; // schedule_version_id
+    const { id } = req.params; 
     const { comment } = req.body || {};
     if (!comment || !String(comment).trim()) {
       return res.status(400).json({ message: 'Comment is required.' });
@@ -1487,7 +1443,6 @@ app.post('/api/schedule-versions/:id/faculty-comments', authenticateToken, requi
   }
 });
 
-// Fetch ONLY the current faculty member's comments for a specific schedule version
 app.get('/api/schedule-versions/:id/my-faculty-comments', authenticateToken, requireFaculty, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1508,7 +1463,6 @@ app.get('/api/schedule-versions/:id/my-faculty-comments', authenticateToken, req
   }
 });
 
-// TEMP DIAGNOSTIC: List columns for a given table (remove after verification)
 app.get('/api/debug/columns', authenticateToken, requireStaff, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1540,13 +1494,11 @@ app.get('/api/debug/columns', authenticateToken, requireStaff, async (req, res) 
   }
 });
 
-// Error handling middleware
 app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
   res.status(500).json({ error: 'خطأ داخلي في الخادم' });
 });
 
-// Start server
 server.listen(PORT, () => {
   console.log(`dYs? SmartSchedule Server running on port ${PORT}`);
   console.log(`dY"S Connected to PostgreSQL database: ${process.env.DB_NAME}`);
