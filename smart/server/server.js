@@ -1143,16 +1143,26 @@ Return only this JSON array, with no explanation text.
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
 
-    const payload = {
-      contents: [{
-        parts: [{
-          text: systemInstruction + "\n\n" + userQuery
-        }]
-      }],
+        const payload = {
+      contents: [{ parts: [{ text: userQuery }] }],
+      systemInstruction: { parts: [{ text: systemInstruction }] },
       generationConfig: {
-        temperature: 0.9
-      }
-    };
+        responseMimeType: 'application/json',
+        temperature: 0.9,
+        responseSchema: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              course_id: { type: 'NUMBER' },
+              day: { type: 'STRING' },
+              start_time: { type: 'STRING' },
+              end_time: { type: 'STRING' },
+              section_type: { type: 'STRING' }
+            },
+            required: ['course_id', 'day', 'start_time', 'end_time', 'section_type']
+          }
+        }
       }
     };
 
