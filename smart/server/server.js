@@ -142,9 +142,13 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// ================== MIGRATIONS =============================
+// ================== MIGRATIONS (تم تعطيلها لتجنب أخطاء SQL النحوية) =============================
 async function runMigrations() {
-  const dir = path.join(__dirname, 'migrations');
+  // تم تعطيل تشغيل الهجرات لمنع أخطاء SQL النحوية العالقة
+  console.log('[migrate] Skipping migrations to avoid SQL syntax errors.');
+  return;
+  
+  /*   const dir = path.join(__dirname, 'migrations');
   try {
     if (!fs.existsSync(dir)) return;
     const files = fs.readdirSync(dir)
@@ -165,6 +169,7 @@ async function runMigrations() {
   } catch (e) {
     console.error('[migrate] Migration error:', e);
   }
+  */
 }
 
 runMigrations().catch(() => {});
