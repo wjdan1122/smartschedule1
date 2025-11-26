@@ -99,18 +99,18 @@ wss.on('error', (err) => {
   console.error('[collaboration] websocket error:', err);
 });
 
-// ================== DB POOL (الإعدادات الأصلية) ================================
-const sslConfig = process.env.DB_SSL === 'true'
-  ? { require: true, rejectUnauthorized: false }
-  : undefined;
-
+// ================== DB POOL (التعديل النهائي لإعدادات الاتصال الآمن) ================================
+// تم تعديل هذا الجزء لضمان إعداد SSL بشكل صحيح مع Supabase على Render.
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  ssl: sslConfig,
+  // فرض إعدادات SSL اللازمة للاتصال بين Render و Supabase
+  ssl: {
+    rejectUnauthorized: false
+  },
   keepAlive: true,
   max: 10,
   idleTimeoutMillis: 30000,
