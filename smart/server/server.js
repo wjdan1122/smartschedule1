@@ -1,7 +1,3 @@
-// ✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅
-// ✅ الكود المعدّل لاستخدام SendGrid و DATABASE_URL ✅
-// ✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅
-
 console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE ✅✅✅");
 console.log("👉 Running THIS server.js from smart3/smart/server");
 
@@ -17,8 +13,8 @@ const http = require('http');
 const crypto = require('crypto');
 const WebSocket = require('ws');
 const { setupWSConnection } = require('y-websocket/bin/utils');
-// استيراد SendGrid بدلاً من nodemailer
-const sgMail = require('@sendgrid/mail'); 
+const nodemailer = require('nodemailer'); // تم استرجاع Nodemailer
+// const sgMail = require('@sendgrid/mail'); // تم حذف SendGrid
 require('dotenv').config();
 
 const {
@@ -70,34 +66,23 @@ app.use(
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// =============== EMAIL TRANSPORTER (SENDGRID) ==================
-// تهيئة SendGrid باستخدام مفتاح API
-if (process.env.SENDGRID_API_KEY) {
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-    console.log('✅ SendGrid API Key loaded successfully');
-} else {
-    console.error('❌ SENDGRID_API_KEY is missing in environment variables.');
-}
+// =============== EMAIL TRANSPORTER (GMAIL) ==================
+// تم إعادة إعدادات Nodemailer/Gmail الأصلية
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER, // ضيفه في Render
+    pass: process.env.EMAIL_PASS  // ضيفه في Render (يفضل App Password)
+  }
+});
 
-// إنشاء كائن Transporter يحاكي nodemailer لسهولة التعديل
-const transporter = {
-    sendMail: async (mailOptions) => {
-        try {
-            await sgMail.send({
-                to: mailOptions.to,
-                from: mailOptions.from, // يجب أن يتطابق مع هوية المرسل التي أكدتها في SendGrid
-                subject: mailOptions.subject,
-                html: mailOptions.html
-            });
-            return { messageId: 'SendGrid success' };
-        } catch (error) {
-            console.error('❌ SendGrid Error Details:', error.response?.body);
-            throw new Error('Failed to send email via SendGrid');
-        }
-    }
-};
-
-// لا نحتاج للتحقق من Transporter في SendGrid بنفس طريقة Nodemailer/Gmail
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ Error verifying mail transporter:', error);
+  } else {
+    console.log('✅ Mail transporter is ready to send messages');
+  }
+});
 
 // ================== WEBSOCKET ===============================
 wss.on('connection', (ws, req) => {
@@ -116,12 +101,18 @@ wss.on('error', (err) => {
   console.error('[collaboration] websocket error:', err);
 });
 
-// ================== DB POOL (المعدّل لاستخدام DATABASE_URL) ================================
-// افتراض استخدام DATABASE_URL و SSL (ضروري على Render)
-const sslConfig = { require: true, rejectUnauthorized: false };
+// ================== DB POOL (الإعدادات الأصلية) ================================
+// تم استرجاع الإعدادات الأصلية (التي تعتمد على DB_HOST, DB_USER, إلخ)
+const sslConfig = process.env.DB_SSL === 'true'
+  ? { require: true, rejectUnauthorized: false }
+  : undefined;
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`, // يستخدم DATABASE_URL إذا كان متاحًا، أو يعود إلى المتغيرات القديمة.
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
   ssl: sslConfig,
   keepAlive: true,
   max: 10,
@@ -191,7 +182,7 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
-
+// هذا الاستعلام الأصلي الذي كان يسبب خطأ Syntax Error
     const query = `
       SELECT u.user_id, u.name, u.email, u.password, u.role,
              s.student_id, s.level, s.is_ir
@@ -303,10 +294,9 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     );
 
     const resetLink = `https://endearing-kulfi-c96605.netlify.app/reset-password?token=${resetToken}`;
-// تم تعديل حقل 'from' لاستخدام متغير بيئة (أضف FROM_EMAIL إلى Render) 
-// أو استخدم البريد الذي أكدته في SendGrid مباشرة
+
     const mailOptions = {
-      from: process.env.FROM_EMAIL || 'zinaharbari@gmail.com', // استخدم إيميل المرسل المعتمد في SendGrid
+      from: process.env.EMAIL_USER,
       to: email,
       subject: 'SmartSchedule - Reset Password',
       html: `<p>You requested a password reset.</p>
@@ -1422,7 +1412,6 @@ app.post(
     } finally {
       client.release();
     }
-  }
 );
 
 app.get(
