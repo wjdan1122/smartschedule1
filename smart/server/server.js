@@ -180,14 +180,14 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // ✅ تم تعديل هذا الاستعلام لإضافة علامات اقتباس مزدوجة حول الكلمات المحجوزة
-    // لحل مشكلة Syntax Error التي تظهر في PostgreSQL.
+    // ✅ تم تعديل هذا الاستعلام لحل خطأ "syntax error at or near """
+    // وتمت إزالة علامات الاقتباس المزدوجة حول أسماء الأعمدة والجداول غير المحجوزة.
     const query = `
-      SELECT u."user_id", u."name", u."email", u."password", u."role",
-             s."student_id", s."level", s."is_ir"
-      FROM "users" u
-      LEFT JOIN "students" s ON u."user_id" = s."user_id"
-      WHERE u."email" = $1
+      SELECT u.user_id, u.name, u.email, u.password, u.role,
+             s.student_id, s.level, s.is_ir
+      FROM users u
+      LEFT JOIN students s ON u.user_id = s.user_id
+      WHERE u.email = $1
     `;
     const result = await client.query(query, [email]);
 
