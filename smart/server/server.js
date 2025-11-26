@@ -173,94 +173,85 @@ runMigrations().catch(() => {});
 // AUTH ROUTES
 // ==========================================================
 app.post('/api/auth/login', validateLogin, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { email, password } = req.validatedData;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
-    }
+  const query = `
+      SELECT u.user_id, u.name, u.email, u.password, u.role,
+             s.student_id, s.level, s.is_ir
+      FROM users u
+      LEFT JOIN students s ON u.user_id = s.user_id
+      WHERE u.email = $1
+    `;
+    const result = await client.query(query, [email]);
 
-    // ✅ تم تعديل هذا الاستعلام لإضافة علامات اقتباس مزدوجة حول الكلمات المحجوزة
-    // لحل مشكلة Syntax Error التي تظهر في PostgreSQL.
-    const query = `
-      SELECT u."user_id", u."name", u."email", u."password", u."role",
-             s."student_id", s."level", s."is_ir"
-      FROM "users" u
-      LEFT JOIN "students" s ON u."user_id" = s."user_id"
-      WHERE u."email" = $1
-    `;
-    const result = await client.query(query, [email]);
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Incorrect credentials' });
+    }
 
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Incorrect credentials' });
-    }
+    const user = result.rows[0];
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Incorrect credentials' });
+    }
 
-    const user = result.rows[0];
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({ error: 'Incorrect credentials' });
-    }
+    if (user.role === 'student') {
+      let studentId = user.student_id;
+      let level = user.level;
+      let is_ir = user.is_ir;
 
-    if (user.role === 'student') {
-      let studentId = user.student_id;
-      let level = user.level;
-      let is_ir = user.is_ir;
+      if (!studentId) {
+        const studentResult = await client.query(
+          'SELECT student_id, level, is_ir FROM students WHERE user_id = $1',
+          [user.user_id]
+        );
+        if (studentResult.rowCount > 0) {
+          studentId = studentResult.rows[0].student_id;
+          level = studentResult.rows[0].level;
+          is_ir = studentResult.rows[0].is_ir;
+        }
+      }
 
-      if (!studentId) {
-        const studentResult = await client.query(
-          'SELECT student_id, level, is_ir FROM students WHERE user_id = $1',
-          [user.user_id]
-        );
-        if (studentResult.rowCount > 0) {
-          studentId = studentResult.rows[0].student_id;
-          level = studentResult.rows[0].level;
-          is_ir = studentResult.rows[0].is_ir;
-        }
-      }
+      const token = jwt.sign(
+        { id: studentId, user_id: user.user_id, email: user.email, type: 'student' },
+        process.env.JWT_SECRET,
+        { expiresIn: '24h' }
+      );
 
-      const token = jwt.sign(
-        { id: studentId, user_id: user.user_id, email: user.email, type: 'student' },
-        process.env.JWT_SECRET,
-        { expiresIn: '24h' }
-      );
+      return res.json({
+        token,
+        user: {
+          id: studentId,
+          user_id: user.user_id,
+          email: user.email,
+          name: user.name,
+          level,
+          is_ir,
+          type: 'student',
+          role: 'student',
+        },
+      });
+    }
 
-      return res.json({
-        token,
-        user: {
-          id: studentId,
-          user_id: user.user_id,
-          email: user.email,
-          name: user.name,
-          level,
-          is_ir,
-          type: 'student',
-          role: 'student',
-        },
-      });
-    }
+    const token = jwt.sign(
+      { id: user.user_id, email: user.email, role: user.role, type: 'user' },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
 
-    const token = jwt.sign(
-      { id: user.user_id, email: user.email, role: user.role, type: 'user' },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    return res.json({
-      token,
-      user: {
-        id: user.user_id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        type: 'user',
-      },
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Server error' });
-  } finally {
-    client.release();
-  }
+    return res.json({
+      token,
+      user: {
+        id: user.user_id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        type: 'user',
+      },
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
 });
 
 // ========== FORGOT PASSWORD =================
