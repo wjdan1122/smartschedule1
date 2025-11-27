@@ -1,318 +1,530 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Container, Row, Col, Card, Navbar, Nav, Button, Badge, Spinner, Alert, ListGroup, Form } from 'react-bootstrap';
-import { FaUsers, FaCheckCircle, FaComments, FaVoteYea, FaBell, FaCalendarAlt, FaBook, FaBalanceScale, FaHome, FaSignOutAlt, FaUserGraduate, FaSync } from 'react-icons/fa';
-import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend,
-} from 'chart.js';
-import { Line, Bar, Doughnut } from 'react-chartjs-2';
-import '../App.css';
+console.log("✅✅✅ SMART SCHEDULE SERVER - FULL VERSION ✅✅✅");
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend);
+const express = require('express');
+const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const bodyParser = require('body-parser');
+const { Pool } = require('pg');
+const http = require('http');
+const crypto = require('crypto');
+const WebSocket = require('ws');
+const nodemailer = require('nodemailer'); 
+require('dotenv').config();
 
-// --- Fetch Helper IMPROVED ---
-const fetchData = async (url, method = 'GET', body = null) => {
-  const token = localStorage.getItem('token');
-  console.log(`🔗 Fetching: ${url}, Method: ${method}, Token: ${token ? 'Present' : 'Missing'}`);
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+const PORT = process.env.PORT || 5000;
+
+// ================== MIDDLEWARE ========================
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://smartschedule1-b64l.onrender.com',
+    'https://endearing-kulfi-c96605.netlify.app'
+  ],
+  credentials: true,
+}));
+
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+
+// ================== LOGGING MIDDLEWARE ========================
+app.use((req, res, next) => {
+  console.log('📨 Incoming Request:', {
+    method: req.method,
+    url: req.url,
+    timestamp: new Date().toISOString()
+  });
+  next();
+});
+
+// ================== DB POOL ================================
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  ssl: {
+    rejectUnauthorized: false
+  },
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 20000,
+});
+
+// Test database connection
+pool.on('connect', () => {
+  console.log('✅ Database connected successfully');
+});
+
+pool.on('error', (err) => {
+  console.error('❌ Database connection error:', err);
+});
+
+// ================== AUTH MIDDLEWARE ========================
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
   
-  const options = {
-    method,
-    headers: { 
-      'Content-Type': 'application/json', 
-      ...(token && { 'Authorization': `Bearer ${token}` }) 
-    },
-    credentials: 'include'
-  };
+  console.log('🔐 Auth check - Token:', token ? 'Present' : 'Missing');
   
-  if (body) { 
-    options.body = JSON.stringify(body);
-    console.log('📤 Request Body:', body);
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
   }
   
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      console.log('❌ Token verification failed:', err.message);
+      return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+    req.user = user;
+    console.log('✅ Authenticated user:', user);
+    next();
+  });
+};
+
+const requireStaff = (req, res, next) => {
+  if (req.user && (req.user.role === 'staff' || req.user.role === 'admin' || req.user.role === 'scheduler' || req.user.role === 'committee')) {
+    next();
+  } else {
+    res.status(403).json({ error: 'Staff access required' });
+  }
+};
+
+const requireCommitteeRole = (req, res, next) => {
+  if (req.user && (req.user.role === 'committee' || req.user.role === 'admin')) {
+    next();
+  } else {
+    res.status(403).json({ error: 'Committee access required' });
+  }
+};
+
+// ================== DEBUG ROUTES ========================
+app.get('/api/debug/db-connection', async (req, res) => {
+  const client = await pool.connect();
   try {
-    const response = await fetch(url, options);
-    console.log(`📥 Response Status: ${response.status} for ${url}`);
-    
-    if (response.status === 401 || response.status === 403) { 
-      localStorage.clear();
-      window.location.href = '/login';
-      throw new Error("Authentication failed. Redirecting to login.");
-    }
-    
-    if (!response.ok) {
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch {
-        errorData = { message: `HTTP error! status: ${response.status}` };
+    const result = await client.query('SELECT NOW() as current_time, version() as db_version');
+    res.json({ 
+      dbConnection: '✅ OK', 
+      currentTime: result.rows[0].current_time,
+      dbVersion: result.rows[0].db_version,
+      dbConfig: {
+        host: process.env.DB_HOST,
+        database: process.env.DB_NAME,
+        user: process.env.DB_USER,
+        port: process.env.DB_PORT
       }
-      throw new Error(errorData.message || errorData.error || `Request failed with status ${response.status}`);
-    }
-    
-    const data = await response.json();
-    console.log(`✅ Success: ${url}`, data);
-    return data;
+    });
   } catch (error) {
-    console.error(`❌ Fetch error for ${url}:`, error);
-    throw error;
+    console.error('Database connection error:', error);
+    res.status(500).json({ 
+      dbConnection: '❌ FAILED', 
+      error: error.message 
+    });
+  } finally {
+    client.release();
   }
-};
+});
 
-// --- Sub-Components ---
-const StatCard = ({ icon, number, label, description, loading }) => (
-  <Card className="border-0 shadow-sm h-100" style={{borderRadius: '15px', background: 'rgba(255,255,255,0.9)'}}>
-    <Card.Body className="d-flex flex-column align-items-center justify-content-center p-4">
-      <div className="mb-3 text-primary" style={{fontSize: '2.5rem'}}>{icon}</div>
-      <div style={{fontSize: '2rem', fontWeight: 'bold', color: '#2d3748'}}>
-        {loading ? <Spinner animation="border" size="sm" /> : number}
-      </div>
-      <div className="text-muted fw-bold mb-1">{label}</div>
-      <p className="text-muted text-center small mb-0">{description}</p>
-    </Card.Body>
-  </Card>
-);
+app.get('/api/debug/tables', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public'
+      ORDER BY table_name
+    `);
+    res.json({ 
+      tableCount: result.rows.length,
+      tables: result.rows 
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
 
-const NotificationItem = ({ notification }) => (
-  <div className="bg-light rounded p-3 mb-3 border-start border-4 border-primary shadow-sm">
-    <div className="d-flex justify-content-between align-items-center mb-1">
-      <span className="fw-bold text-dark">{notification.title}</span>
-      <span className="text-muted small">{notification.time}</span>
-    </div>
-    <div className="text-secondary small">{notification.content}</div>
-  </div>
-);
-
-// --- Main Dashboard ---
-const Dashboard = () => {
-  const [stats, setStats] = useState({});
-  const [userInfo, setUserInfo] = useState({ name: '', role: '' });
-  const [loading, setLoading] = useState(true);
-  const [statsError, setStatsError] = useState(null);
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  // Check server connection first
-  const checkServerConnection = async () => {
-    try {
-      console.log('🔗 Checking server connection...');
-      const healthCheck = await fetch('https://smartschedule1-b64l.onrender.com/api/health');
-      if (healthCheck.ok) {
-        const healthData = await healthCheck.json();
-        console.log('✅ Server health:', healthData);
-        return true;
+app.get('/api/debug/full-check', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    // 1. فحص الاتصال
+    const dbCheck = await client.query('SELECT NOW() as time');
+    
+    // 2. فحص الجداول
+    const tables = await client.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public'
+    `);
+    
+    // 3. فحص البيانات
+    const usersCount = await client.query("SELECT COUNT(*) FROM users");
+    const studentsCount = await client.query("SELECT COUNT(*) FROM students");
+    const votesCount = await client.query("SELECT COUNT(*) FROM votes");
+    const coursesCount = await client.query("SELECT COUNT(*) FROM courses");
+    
+    res.json({
+      database: {
+        connection: '✅ Connected',
+        currentTime: dbCheck.rows[0].time
+      },
+      tables: {
+        count: tables.rows.length,
+        list: tables.rows.map(t => t.table_name)
+      },
+      data: {
+        totalUsers: parseInt(usersCount.rows[0].count),
+        totalStudents: parseInt(studentsCount.rows[0].count),
+        totalVotes: parseInt(votesCount.rows[0].count),
+        totalCourses: parseInt(coursesCount.rows[0].count)
+      },
+      environment: {
+        dbHost: process.env.DB_HOST ? '✅ Set' : '❌ Missing',
+        dbName: process.env.DB_NAME ? '✅ Set' : '❌ Missing',
+        dbUser: process.env.DB_USER ? '✅ Set' : '❌ Missing',
+        dbPort: process.env.DB_PORT ? '✅ Set' : '❌ Missing',
+        jwtSecret: process.env.JWT_SECRET ? '✅ Set' : '❌ Missing'
       }
-      return false;
-    } catch (error) {
-      console.error('❌ Server connection failed:', error);
-      return false;
+    });
+    
+  } catch (error) {
+    res.status(500).json({ 
+      error: 'Debug check failed',
+      details: error.message 
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// ================== AUTH ROUTES ========================
+app.post('/api/auth/login', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { email, password } = req.body;
+    console.log('🔐 Login attempt for:', email);
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
     }
-  };
 
-  const fetchDashboardData = useCallback(async (retryCount = 0) => {
-    setLoading(true);
-    setStatsError(null);
-    
-    try {
-      const storedUser = JSON.parse(localStorage.getItem('user')) || {};
-      console.log('📊 Fetching dashboard data for user:', storedUser);
-      
-      setUserInfo({ 
-        name: storedUser.name || 'User', 
-        role: storedUser.role || 'Unknown Role' 
-      });
-      
-      const statsData = await fetchData('https://smartschedule1-b64l.onrender.com/api/statistics');
-      console.log('📈 Stats data received:', statsData);
-      
-      setStats(statsData);
-      setStatsError(null);
-      
-    } catch (err) { 
-      console.error('❌ Failed to fetch dashboard data:', err);
-      
-      if (retryCount < 2) {
-        console.log(`🔄 Retrying... Attempt ${retryCount + 1}`);
-        setTimeout(() => fetchDashboardData(retryCount + 1), 2000);
-      } else {
-        setStatsError(err.message || 'Failed to load statistics');
-        // Set default values for display
-        setStats({
-          totalStudents: 0,
-          votingStudents: 0,
-          totalComments: 0,
-          participationRate: '0.0'
-        });
-      }
-    } finally { 
-      setLoading(false); 
+    const query = `
+      SELECT u.user_id, u.name, u.email, u.password, u.role,
+             s.student_id, s.level, s.is_ir
+      FROM users u
+      LEFT JOIN students s ON u.user_id = s.user_id
+      WHERE u.email = $1
+    `;
+    const result = await client.query(query, [email]);
+
+    if (result.rows.length === 0) {
+      console.log('❌ User not found:', email);
+      return res.status(401).json({ error: 'Incorrect credentials' });
     }
-  }, []);
 
-  useEffect(() => {
-    const checkUserRole = async () => {
-      try {
-        const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
-        console.log('👤 Stored user:', storedUser);
-        
-        if (storedUser.role && storedUser.role.toLowerCase().includes('committee')) {
-          console.log('🔄 Redirecting committee user...');
-          navigate('/load-committee', { replace: true });
-        }
-      } catch (error) {
-        console.error('Error checking user role:', error);
-      }
-    };
+    const user = result.rows[0];
+    console.log('👤 User found:', { id: user.user_id, role: user.role });
+
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      console.log('❌ Invalid password for:', email);
+      return res.status(401).json({ error: 'Incorrect credentials' });
+    }
+
+    let tokenPayload;
+    let userResponse;
+
+    if (user.role === 'student') {
+      tokenPayload = { 
+        id: user.student_id, 
+        user_id: user.user_id, 
+        email: user.email, 
+        type: 'student',
+        role: 'student'
+      };
+      userResponse = {
+        id: user.student_id,
+        user_id: user.user_id,
+        email: user.email,
+        name: user.name,
+        level: user.level,
+        is_ir: user.is_ir,
+        type: 'student',
+        role: 'student',
+      };
+    } else {
+      tokenPayload = { 
+        id: user.user_id, 
+        email: user.email, 
+        role: user.role, 
+        type: 'user' 
+      };
+      userResponse = {
+        id: user.user_id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        type: 'user',
+      };
+    }
+
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '24h' });
+
+    console.log('✅ Login successful for:', email);
+    res.json({
+      token,
+      user: userResponse,
+    });
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    res.status(500).json({ error: 'Server error during login' });
+  } finally {
+    client.release();
+  }
+});
+
+// ================== STATISTICS ROUTE ========================
+app.get('/api/statistics', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    console.log('📊 Fetching statistics for user:', req.user);
     
-    checkUserRole();
-  }, [navigate]);
+    const [
+      studentsResult,
+      votesResult,
+      votingStudentsResult,
+      commentsResult,
+    ] = await Promise.all([
+      client.query("SELECT COUNT(*) FROM users WHERE role = 'student'"),
+      client.query('SELECT COUNT(*) FROM votes'),
+      client.query('SELECT COUNT(DISTINCT student_id) FROM votes'),
+      client.query('SELECT COUNT(*) FROM comments'),
+    ]);
 
-  useEffect(() => {
-    const initializeDashboard = async () => {
-      const isServerConnected = await checkServerConnection();
-      if (isServerConnected) {
-        fetchDashboardData();
-      } else {
-        setStatsError('Cannot connect to server. Please check your connection.');
-        setLoading(false);
-      }
+    console.log('📈 Raw query results:', {
+      students: studentsResult.rows[0],
+      votes: votesResult.rows[0],
+      votingStudents: votingStudentsResult.rows[0],
+      comments: commentsResult.rows[0]
+    });
+
+    const totalStudents = parseInt(studentsResult.rows[0]?.count || 0, 10);
+    const totalVotes = parseInt(votesResult.rows[0]?.count || 0, 10);
+    const votingStudents = parseInt(votingStudentsResult.rows[0]?.count || 0, 10);
+    const totalComments = parseInt(commentsResult.rows[0]?.count || 0, 10);
+
+    const participationRate = totalStudents > 0 
+      ? (votingStudents / totalStudents) * 100 
+      : 0;
+
+    const stats = {
+      totalStudents,
+      totalVotes,
+      votingStudents,
+      totalComments,
+      participationRate: Number(participationRate).toFixed(1),
     };
-    
-    initializeDashboard();
-  }, [fetchDashboardData]);
 
-  const handleLogout = () => { 
-    localStorage.clear(); 
-    navigate('/login'); 
-  };
+    console.log('✅ Final statistics:', stats);
+    res.json(stats);
+    
+  } catch (error) {
+    console.error('❌ Statistics error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch statistics',
+      details: error.message 
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// ================== STUDENT ROUTES ========================
+app.get('/api/students', authenticateToken, requireStaff, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const query = `
+      SELECT s.student_id, s.is_ir, s.level, u.email, u.name
+      FROM students s
+      JOIN users u ON s.user_id = u.user_id
+      ORDER BY s.student_id
+    `;
+    const result = await client.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching students:', error);
+    res.status(500).json({ error: 'Error fetching students' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/student/:user_id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { user_id } = req.params;
+    const query = `
+      SELECT s.student_id, s.is_ir, s.level,
+             u.user_id, u.email, u.name
+      FROM students s
+      JOIN users u ON s.user_id = u.user_id
+      WHERE u.user_id = $1
+    `;
+    const result = await client.query(query, [user_id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching student:', error);
+    res.status(500).json({ error: 'Error fetching student data' });
+  } finally {
+    client.release();
+  }
+});
+
+// ================== COURSE ROUTES ========================
+app.get('/api/courses', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { level, department } = req.query;
+    let query = 'SELECT * FROM courses';
+    const queryParams = [];
+
+    if (level) {
+      queryParams.push(level);
+      query += ` WHERE level = $${queryParams.length}`;
+    }
+
+    if (department) {
+      queryParams.push(department);
+      query += queryParams.length === 1 ? ' WHERE' : ' AND';
+      query += ` dept_code = $${queryParams.length}`;
+    }
+
+    query += ' ORDER BY level, name';
+    const result = await client.query(query, queryParams);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching courses:', error);
+    res.status(500).json({ error: 'Error fetching courses' });
+  } finally {
+    client.release();
+  }
+});
+
+// ================== SCHEDULE ROUTES ========================
+app.get('/api/schedules/level/:level', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { level } = req.params;
+    const scheduleQuery = `
+      SELECT * FROM schedule_versions
+      WHERE level = $1 AND is_active = true AND committee_approved = true
+      LIMIT 1
+    `;
+    const scheduleResult = await client.query(scheduleQuery, [level]);
+    if (scheduleResult.rows.length === 0) {
+      return res.status(404).json({ message: `No active schedule found for level ${level}.` });
+    }
+    const activeSchedule = scheduleResult.rows[0];
+    res.json({ schedule: activeSchedule, comments: [] });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Failed to fetch schedule data.' });
+  } finally {
+    client.release();
+  }
+});
+
+// ================== USER ROUTES ========================
+app.get('/api/user/profile', authenticateToken, async (req, res) => {
+  try {
+    res.json({ 
+      user: req.user,
+      message: 'User profile retrieved successfully' 
+    });
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    res.status(500).json({ error: 'Failed to fetch user profile' });
+  }
+});
+
+// ================== BASIC ROUTES ========================
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    version: '1.0.0'
+  });
+});
+
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'SmartSchedule Server is running!',
+    endpoints: {
+      debug: '/api/debug/full-check',
+      health: '/api/health',
+      login: '/api/auth/login',
+      statistics: '/api/statistics'
+    }
+  });
+});
+
+// ================== ERROR HANDLING ========================
+app.use((error, req, res, next) => {
+  console.error('❌ Unhandled error:', error);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: error.message 
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    error: 'Endpoint not found',
+    path: req.originalUrl 
+  });
+});
+
+// ================== START SERVER ========================
+server.listen(PORT, () => {
+  console.log(`🚀 SmartSchedule Server running on port ${PORT}`);
+  console.log(`📊 Debug URL: http://localhost:${PORT}/api/debug/full-check`);
+  console.log(`❤️ Health check: http://localhost:${PORT}/api/health`);
+});
+
+// ================== GRACEFUL SHUTDOWN ========================
+let shuttingDown = false;
+const gracefulShutdown = () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log('🔄 Shutting down server gracefully...');
   
-  const isActive = (path) => location.pathname === path ? 'active' : '';
-
-  const displayStats = [
-    { 
-      icon: <FaUserGraduate />, 
-      number: stats.totalStudents ?? '0', 
-      label: 'Total Students', 
-      description: 'Students enrolled' 
-    },
-    { 
-      icon: <FaCheckCircle />, 
-      number: stats.votingStudents ?? '0', 
-      label: 'Students Voted', 
-      description: `Participation` 
-    },
-    { 
-      icon: <FaComments />, 
-      number: stats.totalComments ?? '0', 
-      label: 'Student Comments', 
-      description: 'Notes received' 
-    },
-  ];
-
-  // --- Internal Navbar Component ---
-  const InternalNavbar = () => (
-    <Navbar expand="lg" variant="dark" className="shadow-lg p-3 mb-4 rounded" style={{background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)'}}>
-      <Container fluid>
-        <Navbar.Brand className="fw-bold fs-4">🎓 KSU SmartSchedule</Navbar.Brand>
-        <Navbar.Toggle aria-controls="navbar-nav" />
-        <Navbar.Collapse id="navbar-nav">
-          <Nav className="mx-auto">
-            <Nav.Link onClick={() => navigate('/dashboard')} className={`text-white mx-2 fw-bold ${isActive('/dashboard') && 'text-warning'}`}>
-              <FaHome className="me-1"/> Home
-            </Nav.Link>
-            <Nav.Link onClick={() => navigate('/manageSchedules')} className={`text-white mx-2 ${isActive('/manageSchedules') && 'fw-bold'}`}>
-              <FaCalendarAlt className="me-1"/> Schedules
-            </Nav.Link>
-            <Nav.Link onClick={() => navigate('/managestudents')} className={`text-white mx-2 ${isActive('/managestudents') && 'fw-bold'}`}>
-              <FaUsers className="me-1"/> Students
-            </Nav.Link>
-            <Nav.Link onClick={() => navigate('/addElective')} className={`text-white mx-2 ${isActive('/addElective') && 'fw-bold'}`}>
-              <FaBook className="me-1"/> Courses
-            </Nav.Link>
-            <Nav.Link onClick={() => navigate('/managerules')} className={`text-white mx-2 ${isActive('/managerules') && 'fw-bold'}`}>
-              <FaBalanceScale className="me-1"/> Rules
-            </Nav.Link>
-            <Nav.Link onClick={() => navigate('/managenotifications')} className={`text-white mx-2 ${isActive('/managenotifications') && 'fw-bold'}`}>
-              <FaBell className="me-1"/> Comments
-            </Nav.Link>
-          </Nav>
-          <div className="d-flex align-items-center mt-3 mt-lg-0">
-             <div className="text-white text-end me-3 lh-1 d-none d-lg-block">
-                <div className="fw-bold">{userInfo.name}</div>
-                <small className="text-white-50 text-uppercase">{userInfo.role}</small>
-             </div>
-             <Button variant="danger" size="sm" className="fw-bold px-3 rounded-pill" onClick={handleLogout}>
-               <FaSignOutAlt className="me-1"/> Logout
-             </Button>
-          </div>
-        </Navbar.Collapse>
-      </Container>
-    </Navbar>
-  );
-
-  return (
-    <div style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', minHeight: '100vh', paddingBottom: '2rem'}}>
-      <Container fluid="lg" className="pt-3">
-        <InternalNavbar />
-        
-        <Card className="border-0 shadow-lg" style={{borderRadius: '20px', background: 'rgba(255,255,255,0.95)'}}>
-            <Card.Header className="text-center text-white py-4" style={{background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)', borderTopLeftRadius: '20px', borderTopRightRadius: '20px'}}>
-                <div className="d-flex justify-content-between align-items-center">
-                  <div></div>
-                  <div>
-                    <h1 className="fw-bold mb-1">Admin Dashboard</h1>
-                    <p className="mb-0 opacity-75">Overview of system statistics and student engagement</p>
-                  </div>
-                  <Button 
-                    variant="light" 
-                    size="sm" 
-                    onClick={() => fetchDashboardData()}
-                    disabled={loading}
-                  >
-                    <FaSync className={loading ? 'spinning' : ''} />
-                  </Button>
-                </div>
-            </Card.Header>
-            <Card.Body className="p-4 p-lg-5">
-                <div className="text-center mb-5">
-                    <h2 className="text-dark fw-bolder">Welcome, {userInfo.name}!</h2>
-                    {statsError && (
-                      <Alert variant="warning" className="mt-3">
-                        <div className="d-flex justify-content-between align-items-center">
-                          <span>Stats Error: {statsError}</span>
-                          <Button 
-                            variant="outline-warning" 
-                            size="sm" 
-                            onClick={() => fetchDashboardData()}
-                            disabled={loading}
-                          >
-                            {loading ? <Spinner animation="border" size="sm" /> : 'Retry'}
-                          </Button>
-                        </div>
-                      </Alert>
-                    )}
-                </div>
-
-                <Row xs={1} md={2} lg={3} className="g-4 mb-5">
-                    {displayStats.map((stat, index) => (
-                        <Col key={index}><StatCard {...stat} loading={loading} /></Col>
-                    ))}
-                </Row>
-
-                <section className="bg-white rounded-4 p-4 shadow-sm mt-5 border">
-                    <h4 className="text-dark mb-3 d-flex align-items-center fw-bold">
-                      <FaBell className="me-2 text-primary" /> Recent Notifications
-                    </h4>
-                    <NotificationItem notification={{ 
-                      title: 'System Status', 
-                      time: new Date().toLocaleTimeString(), 
-                      content: loading ? 'Loading dashboard data...' : statsError ? 'Connection issues detected' : 'Dashboard data loaded successfully'
-                    }} />
-                </section>
-            </Card.Body>
-        </Card>
-      </Container>
-    </div>
-  );
+  wss.clients.forEach((client) => {
+    try {
+      client.terminate();
+    } catch {}
+  });
+  
+  wss.close(() => console.log('WebSocket server closed'));
+  
+  server.close(() => {
+    console.log('HTTP server closed');
+    pool.end(() => {
+      console.log('Database pool closed');
+      process.exit(0);
+    });
+  });
 };
 
-export default Dashboard;
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
