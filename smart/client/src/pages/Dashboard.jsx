@@ -28,6 +28,9 @@ ChartJS.register(
   Legend,
 );
 
+// ✅✅✅ FIX: Define the Render API Base URL
+const API_BASE_URL = 'https://smartschedule1-b64l.onrender.com';
+
 // Generic fetchData function
 const fetchData = async (url, method = 'GET', body = null) => {
   const token = localStorage.getItem('token');
@@ -36,7 +39,8 @@ const fetchData = async (url, method = 'GET', body = null) => {
     headers: { 'Content-Type': 'application/json', ...(token && { 'Authorization': `Bearer ${token}` }) }
   };
   if (body) { options.body = JSON.stringify(body); }
-  const response = await fetch(url, options);
+  // ✅✅✅ FIX: Prepend the API_BASE_URL to the request URL
+  const response = await fetch(`${API_BASE_URL}${url}`, options); 
   if (response.status === 401 || response.status === 403) { throw new Error("Authentication failed."); }
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: 'Request Failed' }));
@@ -71,9 +75,10 @@ const VotingResults = () => {
     setLoading(true);
     setError(null);
     try {
+      // ✅ FIX: Changed from 'http://localhost:5000/api/votes/results' to '/api/votes/results'
       const [data, approvedList] = await Promise.all([
-        fetchData('http://localhost:5000/api/votes/results'),
-        fetchData('http://localhost:5000/api/electives/approved')
+        fetchData('/api/votes/results'), 
+        fetchData('/api/electives/approved') // ✅ FIX: Changed
       ]);
       const processedResults = {};
       data.forEach(row => {
@@ -122,9 +127,10 @@ const VotingResults = () => {
     });
 
     try {
+      // ✅ FIX: Changed from 'http://localhost:5000/api/sections' to '/api/sections'
       const [sectionsData, versionsData] = await Promise.all([
-        fetchData('http://localhost:5000/api/sections'),
-        fetchData(`http://localhost:5000/api/schedule-versions?level=${levelNumber}`)
+        fetchData('/api/sections'), 
+        fetchData(`/api/schedule-versions?level=${levelNumber}`) // ✅ FIX: Changed
       ]);
 
       const activeVersion = versionsData.find((version) => version.is_active);
@@ -155,7 +161,8 @@ const VotingResults = () => {
         ? `Integrate the newly approved elective course ${courseId} into the Level ${levelNumber} Software Engineering schedule while keeping existing non-SE sessions fixed.`
         : `Remove the elective course ${courseId} from the Level ${levelNumber} Software Engineering schedule, then rebalance the remaining SE sessions while keeping existing non-SE sessions fixed.`;
 
-      const aiResponse = await fetchData('http://localhost:5000/api/schedule/generate', 'POST', {
+      // ✅ FIX: Changed from 'http://localhost:5000/api/schedule/generate' to '/api/schedule/generate'
+      const aiResponse = await fetchData('/api/schedule/generate', 'POST', {
         currentLevel: levelNumber,
         currentSchedule,
         user_command: baseCommand
@@ -165,7 +172,8 @@ const VotingResults = () => {
         throw new Error('AI schedule could not be generated for the requested update.');
       }
 
-      const savedVersion = await fetchData('http://localhost:5000/api/schedule-versions', 'POST', {
+      // ✅ FIX: Changed from 'http://localhost:5000/api/schedule-versions' to '/api/schedule-versions'
+      const savedVersion = await fetchData('/api/schedule-versions', 'POST', {
         level: levelNumber,
         student_count: activeVersion?.student_count || 25,
         version_comment: `Auto AI update after ${action === 'approve' ? 'approving' : 'removing'} course ${courseId} on ${new Date().toLocaleDateString()}`,
@@ -173,7 +181,8 @@ const VotingResults = () => {
       });
 
       if (savedVersion?.id) {
-        await fetchData(`http://localhost:5000/api/schedule-versions/${savedVersion.id}/activate`, 'PATCH');
+        // ✅ FIX: Changed from 'http://localhost:5000/api/schedule-versions' to '/api/schedule-versions'
+        await fetchData(`/api/schedule-versions/${savedVersion.id}/activate`, 'PATCH'); 
       }
 
       setIntegrationStatus({
@@ -203,7 +212,8 @@ const VotingResults = () => {
       return alert('Please select a valid level from the dropdown before approving.');
     }
     try {
-      await fetchData('http://localhost:5000/api/electives/approve', 'POST', {
+      // ✅ FIX: Changed from 'http://localhost:5000/api/electives/approve' to '/api/electives/approve'
+      await fetchData('/api/electives/approve', 'POST', {
         course_id: courseId,
         level: levelNumber
       });
@@ -230,7 +240,8 @@ const VotingResults = () => {
     if (!confirmRemoval) return;
 
     try {
-      await fetchData('http://localhost:5000/api/electives/approve', 'DELETE', {
+      // ✅ FIX: Changed from 'http://localhost:5000/api/electives/approve' to '/api/electives/approve'
+      await fetchData('/api/electives/approve', 'DELETE', {
         course_id: courseId,
         level: levelNumber
       });
@@ -370,7 +381,8 @@ const Dashboard = () => {
       const storedUser = JSON.parse(localStorage.getItem('user')) || {};
       setUserInfo({ name: storedUser.name || 'Admin User', role: storedUser.role || 'Committee Head' });
 
-      const statsData = await fetchData('http://localhost:5000/api/statistics');
+      // ✅ FIX: Changed from 'http://localhost:5000/api/statistics' to '/api/statistics'
+      const statsData = await fetchData('/api/statistics'); 
       const participationRate = statsData.totalStudents > 0 ? ((statsData.votingStudents / statsData.totalStudents) * 100).toFixed(1) : 0;
 
       setStats({
@@ -508,7 +520,7 @@ const Dashboard = () => {
               <Nav.Link onClick={() => navigate('/manageSchedules')} className="nav-link-custom"><FaCalendarAlt className="me-2" /> Schedules</Nav.Link>
               <Nav.Link onClick={() => navigate('/managestudents')} className="nav-link-custom"><FaUsers className="me-2" /> Students</Nav.Link>
               <Nav.Link onClick={() => navigate('/managerules')} className="nav-link-custom"><FaBalanceScale className="me-2" /> Rules</Nav.Link>
-              {/* ✅✅✅ THE FIX IS HERE: ADDED THE MISSING LINK ✅✅✅ */}
+              {/* THE LINK IS HERE */}
               <Nav.Link onClick={() => navigate('/managenotifications')} className="nav-link-custom"><FaBell className="me-2" /> Comments</Nav.Link>
               {String(userInfo.role || '').toLowerCase().includes('faculty') && (
                 <Nav.Link onClick={() => navigate('/faculty')} className="nav-link-custom"><FaBook className="me-2" /> Faculty</Nav.Link>
@@ -604,4 +616,3 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
-

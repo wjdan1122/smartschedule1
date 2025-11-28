@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Container, Card, Row, Col, Button, Alert, Spinner, Form, ListGroup, Badge } from 'react-bootstrap';
-import { FaArrowRight, FaPlusCircle, FaListAlt, FaTrash, FaUsers, FaShareAlt } from 'react-icons/fa';
-import { useNavigate } from 'react-router-dom';
+import { Container, Card, Row, Col, Button, Alert, Spinner, Form, ListGroup, Badge, Navbar, Nav } from 'react-bootstrap';
+import { FaPlusCircle, FaListAlt, FaTrash, FaUsers, FaShareAlt, FaHome, FaCalendarAlt, FaUserGraduate, FaBook, FaBalanceScale, FaBell, FaCheckCircle, FaVoteYea, FaSignOutAlt } from 'react-icons/fa';
+import { useNavigate, useLocation } from 'react-router-dom';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import '../App.css';
@@ -39,11 +39,60 @@ const ManageRules = () => {
     const [pageError, setPageError] = useState(null);
     const [message, setMessage] = useState(null);
     const navigate = useNavigate();
+    const location = useLocation();
+    
+    // Yjs State
     const [collabDraft, setCollabDraft] = useState('');
     const [collabQueue, setCollabQueue] = useState([]);
     const [collabStatus, setCollabStatus] = useState('connecting');
     const collabRefs = useRef({ doc: null, provider: null, draft: null, queue: null });
     const collaboratorRef = useRef('Scheduler');
+
+    // --- Internal Navbar ---
+    const InternalNavbar = () => {
+        let user = {};
+        try { user = JSON.parse(localStorage.getItem('user') || '{}'); } catch {}
+        const role = String(user.role || '').toLowerCase();
+        const type = user.type || '';
+        const isActive = (path) => location.pathname === path ? 'active' : '';
+        const handleLogout = () => { localStorage.clear(); navigate('/login'); };
+
+        return (
+            <Navbar expand="lg" variant="dark" className="shadow-lg p-3 mb-4 rounded" style={{background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)'}}>
+              <Container fluid>
+                <Navbar.Brand className="fw-bold fs-4">🎓 KSU SmartSchedule</Navbar.Brand>
+                <Navbar.Toggle aria-controls="navbar-nav" />
+                <Navbar.Collapse id="navbar-nav">
+                  <Nav className="mx-auto">
+                    {(type === 'student' || role === 'student') ? (
+                        <>
+                            <Nav.Link onClick={() => navigate('/student-dashboard')} className={`text-white mx-2 ${isActive('/student-dashboard')}`}><FaHome className="me-1"/> Dashboard</Nav.Link>
+                            <Nav.Link onClick={() => navigate('/elective-voting')} className={`text-white mx-2 ${isActive('/elective-voting')}`}><FaVoteYea className="me-1"/> Voting</Nav.Link>
+                        </>
+                    ) : (
+                        <>
+                            <Nav.Link onClick={() => navigate('/dashboard')} className={`text-white mx-2 ${isActive('/dashboard') && 'fw-bold'}`}><FaHome className="me-1"/> Home</Nav.Link>
+                            <Nav.Link onClick={() => navigate('/manageSchedules')} className={`text-white mx-2 ${isActive('/manageSchedules') && 'fw-bold'}`}><FaCalendarAlt className="me-1"/> Schedules</Nav.Link>
+                            <Nav.Link onClick={() => navigate('/managestudents')} className={`text-white mx-2 ${isActive('/managestudents') && 'fw-bold'}`}><FaUserGraduate className="me-1"/> Students</Nav.Link>
+                            <Nav.Link onClick={() => navigate('/addElective')} className={`text-white mx-2 ${isActive('/addElective') && 'fw-bold'}`}><FaBook className="me-1"/> Courses</Nav.Link>
+                            <Nav.Link onClick={() => navigate('/managerules')} className={`text-white mx-2 fw-bold text-warning`}><FaBalanceScale className="me-1"/> Rules</Nav.Link>
+                            <Nav.Link onClick={() => navigate('/managenotifications')} className={`text-white mx-2 ${isActive('/managenotifications') && 'fw-bold'}`}><FaBell className="me-1"/> Comments</Nav.Link>
+                        </>
+                    )}
+                  </Nav>
+                  <div className="d-flex align-items-center mt-3 mt-lg-0">
+                     <div className="text-white text-end me-3 lh-1 d-none d-lg-block">
+                        <div className="fw-bold">{user.name || 'User'}</div>
+                        <small className="text-white-50 text-uppercase">{user.role || 'Guest'}</small>
+                     </div>
+                     <Button variant="danger" size="sm" className="fw-bold px-3 rounded-pill" onClick={handleLogout}><FaSignOutAlt className="me-1"/> Logout</Button>
+                  </div>
+                </Navbar.Collapse>
+              </Container>
+            </Navbar>
+        );
+    };
+
     const toPlainQueueEntry = (entry) => {
         if (entry instanceof Y.Map) {
             return {
@@ -60,12 +109,11 @@ const ManageRules = () => {
         return queueInstance.toArray().map(toPlainQueueEntry);
     };
 
-    // Fetch rules from the server
     const fetchRules = useCallback(async () => {
         setLoading(true);
         setPageError(null);
         try {
-            const rulesData = await fetchData('http://localhost:5000/api/rules');
+            const rulesData = await fetchData('https://smartschedule1-b64l.onrender.com/api/rules');
             setRules(rulesData);
         } catch (err) {
             console.error("Error fetching rules:", err);
@@ -94,7 +142,7 @@ const ManageRules = () => {
 
     useEffect(() => {
         const doc = new Y.Doc();
-        const providerUrl = process.env.REACT_APP_COLLAB_ENDPOINT || 'ws://localhost:5000/collaboration';
+        const providerUrl = process.env.REACT_APP_COLLAB_ENDPOINT || 'wss://smartschedule1-b64l.onrender.com/collaboration';
         const provider = new WebsocketProvider(providerUrl, 'manage-rules', doc, { connect: true });
         const draft = doc.getText('ruleDraft');
         const queue = doc.getArray('ruleQueue');
@@ -189,23 +237,17 @@ const ManageRules = () => {
     };
 
     const formatCollaborativeTimestamp = (value) => {
-        try {
-            return new Date(value).toLocaleString();
-        } catch {
-            return value || '';
-        }
+        try { return new Date(value).toLocaleString(); } catch { return value || ''; }
     };
 
-    // Add new rule
     const handleAddRule = async (e) => {
         e.preventDefault();
         if (!newRuleText.trim()) return;
-
         setLoading(true);
         setPageError(null);
         setMessage(null);
         try {
-            await fetchData('http://localhost:5000/api/rules', 'POST', { text: newRuleText });
+            await fetchData('https://smartschedule1-b64l.onrender.com/api/rules', 'POST', { text: newRuleText });
             setMessage(`Rule added successfully: ${newRuleText}`);
             setNewRuleText('');
             fetchRules();
@@ -216,15 +258,13 @@ const ManageRules = () => {
         }
     };
 
-    // Delete rule
     const handleDeleteRule = async (ruleId) => {
         if (!window.confirm("Are you sure you want to delete this rule? This will affect AI scheduling.")) return;
-
         setLoading(true);
         setPageError(null);
         setMessage(null);
         try {
-            await fetchData(`http://localhost:5000/api/rules/${ruleId}`, 'DELETE');
+            await fetchData(`https://smartschedule1-b64l.onrender.com/api/rules/${ruleId}`, 'DELETE');
             setMessage("Rule deleted successfully.");
             fetchRules();
         } catch (err) {
@@ -235,173 +275,118 @@ const ManageRules = () => {
     };
 
     return (
-        <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-            <Container fluid="lg" className="bg-white p-4 rounded-lg shadow-lg">
-                <div className="navbar bg-blue-900 mb-6 rounded-t-lg p-3 flex justify-between items-center">
-                    <Button
-                        onClick={() => navigate('/dashboard')}
-                        className="back-button text-white flex items-center p-2 rounded-lg bg-opacity-20 hover:bg-opacity-30 border-0"
-                    >
-                        <FaArrowRight className="ml-2" /> Back to Dashboard
-                    </Button>
-                    <h1 className="text-white text-2xl font-bold mb-0">Rules & Constraints Management</h1>
-                    <div></div>
-                </div>
+        <div style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', minHeight: '100vh', paddingBottom: '2rem'}}>
+            <Container fluid="lg" className="pt-3">
+                <InternalNavbar />
 
-                <h1 className="text-3xl text-center text-blue-900 font-extrabold mb-4">
-                    ⚖️ AI Scheduling Constraints (for Gemini)
-                </h1>
-
-                {message && <Alert variant="success" className="mt-3 text-center">{message}</Alert>}
-                {pageError && <Alert variant="danger" className="mt-3 text-center">{pageError}</Alert>}
-
-                <Card className="shadow-lg mb-6 border-success border-2">
-                    <Card.Header className="bg-success text-white py-3 d-flex justify-content-between align-items-center">
-                        <h4 className="mb-0 flex items-center text-xl font-bold">
-                            <FaUsers className="me-2" /> Collaborative Rule Draft (Yjs)
-                        </h4>
-                        <Badge bg={collabStatus === 'connected' ? 'light' : 'warning'} className={`text-uppercase ${collabStatus === 'connected' ? 'text-success' : 'text-dark'}`}>
-                            {collabStatus}
-                        </Badge>
+                <Card className="border-0 shadow-lg" style={{borderRadius: '20px', background: 'rgba(255,255,255,0.95)'}}>
+                    <Card.Header className="text-center text-white py-4" style={{background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)', borderTopLeftRadius: '20px', borderTopRightRadius: '20px'}}>
+                        <h1 className="fw-bold mb-1">Rules & Constraints</h1>
+                        <p className="mb-0 opacity-75">Manage scheduling constraints for AI generation</p>
                     </Card.Header>
-                    <Card.Body>
-                        <Row className="gy-4">
-                            <Col md={6}>
-                                <Form.Group>
-                                    <Form.Label>Shared Draft Pad</Form.Label>
-                                    <Form.Control
-                                        as="textarea"
-                                        rows={4}
-                                        value={collabDraft}
-                                        placeholder="Co-edit a draft with other schedulers in real-time..."
-                                        onChange={(e) => updateCollaborativeDraft(e.target.value)}
-                                    />
-                                    <Form.Text className="text-muted">
-                                        Everyone connected to this page can see your typing instantly.
-                                    </Form.Text>
-                                </Form.Group>
-                                <Button
-                                    variant="primary"
-                                    className="mt-3"
-                                    onClick={handleShareDraftWithTeam}
-                                    disabled={!collabDraft.trim()}
-                                >
-                                    <FaShareAlt className="me-2" /> Share With Team Queue
-                                </Button>
+
+                    <Card.Body className="p-4 p-lg-5">
+                        {message && <Alert variant="success" className="text-center shadow-sm">{message}</Alert>}
+                        {pageError && <Alert variant="danger" className="text-center shadow-sm">{pageError}</Alert>}
+
+                        <Row className="g-4">
+                            <Col lg={6}>
+                                {/* Collaborative Section */}
+                                <Card className="h-100 shadow-sm border-0 bg-light">
+                                    <Card.Header className="bg-success text-white d-flex justify-content-between align-items-center">
+                                        <span className="fw-bold"><FaUsers className="me-2" /> Collaboration Draft</span>
+                                        <Badge bg={collabStatus === 'connected' ? 'light' : 'warning'} text="dark">
+                                            {collabStatus}
+                                        </Badge>
+                                    </Card.Header>
+                                    <Card.Body>
+                                        <Form.Group className="mb-3">
+                                            <Form.Label className="fw-bold small">Shared Pad (Live)</Form.Label>
+                                            <Form.Control
+                                                as="textarea"
+                                                rows={4}
+                                                value={collabDraft}
+                                                placeholder="Type here to collaborate with others..."
+                                                onChange={(e) => updateCollaborativeDraft(e.target.value)}
+                                            />
+                                        </Form.Group>
+                                        <Button variant="success" size="sm" className="w-100 mb-4" onClick={handleShareDraftWithTeam} disabled={!collabDraft.trim()}>
+                                            <FaShareAlt className="me-2" /> Share to Queue
+                                        </Button>
+
+                                        <h6 className="fw-bold border-bottom pb-2">Team Queue</h6>
+                                        <div style={{maxHeight: '300px', overflowY: 'auto'}}>
+                                            {collabQueue.length === 0 ? (
+                                                <p className="text-muted small text-center py-3">No shared drafts yet.</p>
+                                            ) : (
+                                                <ListGroup variant="flush">
+                                                    {collabQueue.map(entry => (
+                                                        <ListGroup.Item key={entry.id} className="bg-white mb-2 rounded border">
+                                                            <div className="d-flex justify-content-between align-items-center mb-1">
+                                                                <strong className="small text-primary">{entry.author}</strong>
+                                                                <small className="text-muted" style={{fontSize:'0.7rem'}}>{formatCollaborativeTimestamp(entry.createdAt)}</small>
+                                                            </div>
+                                                            <p className="mb-2 small">{entry.text}</p>
+                                                            <div className="d-flex gap-1">
+                                                                <Button size="sm" variant="outline-primary" style={{fontSize:'0.7rem'}} onClick={() => handleLoadSharedRule(entry.text)}>Use</Button>
+                                                                <Button size="sm" variant="outline-danger" style={{fontSize:'0.7rem'}} onClick={() => handleRemoveSharedRule(entry.id)}><FaTrash/></Button>
+                                                            </div>
+                                                        </ListGroup.Item>
+                                                    ))}
+                                                </ListGroup>
+                                            )}
+                                        </div>
+                                    </Card.Body>
+                                </Card>
                             </Col>
-                            <Col md={6}>
-                                <h5 className="fw-bold mb-3">Shared Queue</h5>
-                                {collabQueue.length === 0 ? (
-                                    <Alert variant="light" className="border border-2 border-secondary-subtle text-muted">
-                                        No shared drafts yet. Use the pad on the left to propose a rule for review.
-                                    </Alert>
-                                ) : (
-                                    <ListGroup>
-                                        {collabQueue.map(entry => (
-                                            <ListGroup.Item key={entry.id} className="d-flex flex-column gap-2">
-                                                <div className="d-flex justify-content-between align-items-center">
-                                                    <strong>{entry.author || 'Collaborator'}</strong>
-                                                    <small className="text-muted">{formatCollaborativeTimestamp(entry.createdAt)}</small>
-                                                </div>
-                                                <div className="text-muted">{entry.text}</div>
-                                                <div className="d-flex flex-wrap gap-2">
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline-success"
-                                                        onClick={() => handleLoadSharedRule(entry.text)}
-                                                    >
-                                                        Use In Form
-                                                    </Button>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline-danger"
-                                                        onClick={() => handleRemoveSharedRule(entry.id)}
-                                                    >
-                                                        <FaTrash className="me-1" /> Remove
-                                                    </Button>
-                                                </div>
-                                            </ListGroup.Item>
-                                        ))}
-                                    </ListGroup>
-                                )}
+
+                            <Col lg={6}>
+                                {/* Active Rules Section */}
+                                <Card className="shadow-sm border-0 mb-4">
+                                    <Card.Header className="bg-white fw-bold text-primary"><FaPlusCircle className="me-2"/> Add New Rule</Card.Header>
+                                    <Card.Body>
+                                        <Form onSubmit={handleAddRule}>
+                                            <Form.Group className="mb-3">
+                                                <Form.Control
+                                                    as="textarea"
+                                                    rows={3}
+                                                    value={newRuleText}
+                                                    onChange={(e) => setNewRuleText(e.target.value)}
+                                                    disabled={loading}
+                                                    placeholder="E.g. Core lectures must be before 12 PM..."
+                                                    required
+                                                />
+                                            </Form.Group>
+                                            <Button variant="primary" type="submit" className="w-100" disabled={loading}>
+                                                {loading ? <Spinner size="sm" animation="border" /> : 'Add Rule'}
+                                            </Button>
+                                        </Form>
+                                    </Card.Body>
+                                </Card>
+
+                                <Card className="shadow-sm border-0">
+                                    <Card.Header className="bg-white fw-bold text-dark"><FaListAlt className="me-2"/> Active Rules ({rules.length})</Card.Header>
+                                    <Card.Body style={{maxHeight: '400px', overflowY: 'auto'}}>
+                                        {loading && rules.length === 0 ? (
+                                            <div className="text-center py-4"><Spinner animation="border" variant="primary"/></div>
+                                        ) : rules.length === 0 ? (
+                                            <Alert variant="light" className="text-center small">No active rules.</Alert>
+                                        ) : (
+                                            <ListGroup variant="flush">
+                                                {rules.map(rule => (
+                                                    <ListGroup.Item key={rule.rule_id} className="d-flex justify-content-between align-items-center bg-transparent">
+                                                        <span className="me-2">{rule.text}</span>
+                                                        <Button variant="outline-danger" size="sm" onClick={() => handleDeleteRule(rule.rule_id)} disabled={loading}>
+                                                            <FaTrash />
+                                                        </Button>
+                                                    </ListGroup.Item>
+                                                ))}
+                                            </ListGroup>
+                                        )}
+                                    </Card.Body>
+                                </Card>
                             </Col>
                         </Row>
-                    </Card.Body>
-                </Card>
-
-                {/* Add new rule */}
-                <Card className="shadow-lg mb-6 border-blue-400 border-2">
-                    <Card.Header className="bg-blue-500 text-white py-3">
-                        <h4 className="mb-0 flex items-center text-xl font-bold">
-                            <FaPlusCircle className="ml-2" /> Add New Rule
-                        </h4>
-                    </Card.Header>
-                    <Card.Body>
-                        <Form onSubmit={handleAddRule}>
-                            <Row className="align-items-end">
-                                <Col md={9}>
-                                    <Form.Group className="mb-3">
-                                        <Form.Label>
-                                            Rule Text (Example: Core lectures must be scheduled before 12:00 PM)
-                                        </Form.Label>
-                                        <Form.Control
-                                            as="textarea"
-                                            rows={3}
-                                            value={newRuleText}
-                                            onChange={(e) => setNewRuleText(e.target.value)}
-                                            disabled={loading}
-                                            required
-                                        />
-                                    </Form.Group>
-                                </Col>
-                                <Col md={3}>
-                                    <Button variant="success" type="submit" className="w-100" disabled={loading}>
-                                        {loading ? <Spinner size="sm" animation="border" className="ml-2" /> : <FaPlusCircle className="ml-2" />} Add & Save
-                                    </Button>
-                                </Col>
-                            </Row>
-                        </Form>
-                    </Card.Body>
-                </Card>
-
-                {/* Display existing rules */}
-                <Card className="shadow-lg">
-                    <Card.Header className="bg-gray-100 py-3">
-                        <h4 className="mb-0 flex items-center text-blue-800 text-xl font-bold">
-                            <FaListAlt className="ml-2" /> Active Rules ({rules.length})
-                        </h4>
-                    </Card.Header>
-                    <Card.Body>
-                        {loading ? (
-                            <div className="text-center p-5">
-                                <Spinner animation="border" variant="primary" />
-                            </div>
-                        ) : rules.length === 0 ? (
-                            <Alert variant="info" className="text-center">
-                                No rules have been added yet for AI scheduling.
-                            </Alert>
-                        ) : (
-                            <ListGroup as="ol" numbered>
-                                {rules.map(rule => (
-                                    <ListGroup.Item
-                                        key={rule.rule_id}
-                                        className="d-flex justify-content-between align-items-center"
-                                    >
-                                        <div className="ms-2 me-auto">
-                                            <div className="fw-semibold">{rule.text}</div>
-                                        </div>
-                                        <Button
-                                            variant="danger"
-                                            size="sm"
-                                            onClick={() => handleDeleteRule(rule.rule_id)}
-                                            disabled={loading}
-                                        >
-                                            <FaTrash /> Delete
-                                        </Button>
-                                    </ListGroup.Item>
-                                ))}
-                            </ListGroup>
-                        )}
                     </Card.Body>
                 </Card>
             </Container>

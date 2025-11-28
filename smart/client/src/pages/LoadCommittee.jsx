@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Container, Card, ListGroup, Button, Spinner, Alert, Form, Badge, Table, Row, Col } from 'react-bootstrap';
-import { useNavigate } from 'react-router-dom';
-import { FaArrowRight, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import { Container, Card, ListGroup, Button, Spinner, Alert, Form, Badge, Table, Row, Col, Navbar, Nav } from 'react-bootstrap';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { FaArrowRight, FaCheckCircle, FaTimesCircle, FaHome, FaCalendarAlt, FaUsers, FaBook, FaBalanceScale, FaBell, FaVoteYea, FaSignOutAlt, FaUserTie } from 'react-icons/fa';
+import '../App.css';
 
+// Fetch Helper
 const fetchJson = async (url, method = 'GET', body = null) => {
   const token = localStorage.getItem('token');
   const options = {
@@ -35,22 +37,65 @@ const LoadCommittee = () => {
   const [facultyCommentsById, setFacultyCommentsById] = useState({});
   const levels = [3,4,5,6,7,8];
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // --- Internal Navbar ---
+  const InternalNavbar = () => {
+      let user = {};
+      try { user = JSON.parse(localStorage.getItem('user') || '{}'); } catch {}
+      const role = String(user.role || '').toLowerCase();
+      const type = user.type || '';
+      const isActive = (path) => location.pathname === path ? 'active' : '';
+      const handleLogout = () => { localStorage.clear(); navigate('/login'); };
+
+      return (
+          <Navbar expand="lg" variant="dark" className="shadow-lg p-3 mb-4 rounded" style={{background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)'}}>
+            <Container fluid>
+              <Navbar.Brand className="fw-bold fs-4 d-flex align-items-center">
+                  <span className="me-2">🎓</span> KSU SmartSchedule
+              </Navbar.Brand>
+              <Navbar.Toggle aria-controls="navbar-nav" />
+              <Navbar.Collapse id="navbar-nav">
+                <Nav className="mx-auto">
+                    {role.includes('committee') && (
+                        <>
+                             <Nav.Link onClick={() => navigate('/load-committee')} className={`text-white mx-2 fw-bold text-warning`}><FaCheckCircle className="me-1"/> Review</Nav.Link>
+                             {/* Add other committee links here if needed */}
+                        </>
+                    )}
+                     {/* Fallback for other roles if they access this page */}
+                    {(role.includes('schedule') || role.includes('admin')) && (
+                         <Nav.Link onClick={() => navigate('/dashboard')} className={`text-white mx-2`}><FaHome className="me-1"/> Home</Nav.Link>
+                    )}
+                </Nav>
+                <div className="d-flex align-items-center mt-3 mt-lg-0">
+                   <div className="text-white text-end me-3 lh-1 d-none d-lg-block">
+                      <div className="fw-bold">{user.name || 'Committee Member'}</div>
+                      <small className="text-white-50 text-uppercase">{user.role || 'Load Committee'}</small>
+                   </div>
+                   <Button variant="danger" size="sm" className="fw-bold px-3 rounded-pill" onClick={handleLogout}><FaSignOutAlt className="me-1"/> Logout</Button>
+                </div>
+              </Navbar.Collapse>
+            </Container>
+          </Navbar>
+      );
+  };
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const [list, courses] = await Promise.all([
-        fetchJson('http://localhost:5000/api/schedule-versions/pending-committee'),
-        fetchJson('http://localhost:5000/api/courses')
+        fetchJson('https://smartschedule1-b64l.onrender.com/api/schedule-versions/pending-committee'),
+        fetchJson('https://smartschedule1-b64l.onrender.com/api/courses')
       ]);
       setPending(list || []);
       setAllCourses(courses || []);
-      // Load faculty comments for each version
+      
       const entries = await Promise.all(
         (list || []).map(async v => {
           try {
-            const data = await fetchJson(`http://localhost:5000/api/schedule-versions/${v.id}/faculty-comments`);
+            const data = await fetchJson(`https://smartschedule1-b64l.onrender.com/api/schedule-versions/${v.id}/faculty-comments`);
             return [v.id, data];
           } catch { return [v.id, []]; }
         })
@@ -90,11 +135,11 @@ const LoadCommittee = () => {
     const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday'];
     return (
       <div className="overflow-x-auto">
-        <Table bordered className="text-center align-middle">
-          <thead>
+        <Table bordered className="text-center align-middle mb-0">
+          <thead className="bg-light">
             <tr>
               <th style={{width:'12%'}}>Day</th>
-              {timeSlots.map(ts => (<th key={ts}>{ts}</th>))}
+              {timeSlots.map(ts => (<th key={ts} className="small">{ts}</th>))}
             </tr>
           </thead>
           <tbody>
@@ -109,7 +154,7 @@ const LoadCommittee = () => {
                   const startH = parseInt(block.start.split(':')[0],10);
                   const endH = parseInt(block.end.split(':')[0],10);
                   const span = Math.max(1, endH - startH);
-                  cells.push(<td key={`${day}-${slot}`} colSpan={span} className="bg-light fw-semibold">{block.content}</td>);
+                  cells.push(<td key={`${day}-${slot}`} colSpan={span} className="bg-primary bg-opacity-10 fw-bold text-primary small">{block.content}</td>);
                   i += span;
                 } else {
                   const overlapped = blocks.some(b => {
@@ -118,11 +163,11 @@ const LoadCommittee = () => {
                     const h = parseInt(slot.split(':')[0],10);
                     return h >= s && h < e;
                   });
-                  cells.push(<td key={`${day}-${slot}`} className="text-muted">{overlapped ? '' : '-'}</td>);
+                  cells.push(<td key={`${day}-${slot}`} className="text-muted bg-white">-</td>);
                   i += 1;
                 }
               }
-              return (<tr key={day}><th>{day}</th>{cells}</tr>);
+              return (<tr key={day}><th className="bg-light small">{day}</th>{cells}</tr>);
             })}
           </tbody>
         </Table>
@@ -133,7 +178,7 @@ const LoadCommittee = () => {
   const handleApprove = async (version) => {
     setSubmittingId(version.id);
     try {
-      await fetchJson(`http://localhost:5000/api/schedule-versions/${version.id}/committee-review`, 'PATCH', {
+      await fetchJson(`https://smartschedule1-b64l.onrender.com/api/schedule-versions/${version.id}/committee-review`, 'PATCH', {
         approved: true,
         committee_comment: noteById[version.id] || ''
       });
@@ -149,7 +194,7 @@ const LoadCommittee = () => {
   const handleRequestChanges = async (version) => {
     setSubmittingId(version.id);
     try {
-      await fetchJson(`http://localhost:5000/api/schedule-versions/${version.id}/committee-review`, 'PATCH', {
+      await fetchJson(`https://smartschedule1-b64l.onrender.com/api/schedule-versions/${version.id}/committee-review`, 'PATCH', {
         approved: false,
         committee_comment: noteById[version.id] || ''
       });
@@ -162,109 +207,124 @@ const LoadCommittee = () => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.clear();
-    navigate('/login');
-  };
-
   return (
-    <div className="min-h-screen bg-light">
-      <Container fluid="lg" className="py-4">
-        <div className="d-flex justify-content-between align-items-center mb-4 p-3 bg-dark text-white rounded">
-          <h1 className="h3 mb-0">Load Committee Review</h1>
-          <Button variant="outline-light" size="sm" onClick={handleLogout}>Logout</Button>
-        </div>
+    <div style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', minHeight: '100vh', paddingBottom: '2rem'}}>
+      <Container fluid="lg" className="pt-3">
+        <InternalNavbar />
 
-        {error && <Alert variant="danger">{error}</Alert>}
+        <Card className="border-0 shadow-lg" style={{borderRadius: '20px', background: 'rgba(255,255,255,0.95)'}}>
+            <Card.Header className="text-center text-white py-4" style={{background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)', borderTopLeftRadius: '20px', borderTopRightRadius: '20px'}}>
+                <h1 className="fw-bold mb-1">Load Committee Review</h1>
+                <p className="mb-0 opacity-75">Review and approve schedule versions</p>
+            </Card.Header>
 
-        <Card className="mb-3">
-          <Card.Header><strong>Filter</strong></Card.Header>
-          <Card.Body>
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              <span className="fw-semibold">Level:</span>
-              {levels.map(l => (
-                <Button key={l} variant={selectedLevel===l? 'primary':'outline-primary'} size="sm" onClick={()=>setSelectedLevel(l)}>Level {l}</Button>
-              ))}
-            </div>
-            <div className="mt-2 text-muted" style={{fontSize:'0.9rem'}}>
-              Clicking Approve marks the selected schedule as the only approved one for this level.
-            </div>
-          </Card.Body>
-        </Card>
+            <Card.Body className="p-4 p-lg-5">
+                {error && <Alert variant="danger" className="shadow-sm text-center fw-bold">{error}</Alert>}
 
-        <Card>
-          <Card.Header><strong>Pending Schedules for Level {selectedLevel}</strong></Card.Header>
-          <Card.Body>
-            {loading ? (
-              <div className="text-center py-5"><Spinner /></div>
-            ) : filteredPending.length === 0 ? (
-              <Alert variant="info" className="mb-0">No schedules awaiting committee approval for this level.</Alert>
-            ) : (
-              <ListGroup variant="flush">
-                {filteredPending.map(version => (
-                  <ListGroup.Item key={version.id} className={`d-flex flex-column gap-3 ${version.committee_approved ? 'border border-success' : ''}`}>
-                    <Row>
-                      <Col md={8}>
-                        <div className="mb-2">
-                          <div className="fw-bold">{version.version_comment || 'Untitled Version'}</div>
-                          <small className="text-muted">Level {version.level} • {new Date(version.created_at).toLocaleString()}</small>
-                          <div className="mt-2 d-flex gap-2">
-                            {version.is_active && <Badge bg="primary">Active</Badge>}
-                            {version.scheduler_approved && <Badge bg="secondary">From Scheduler</Badge>}
-                            {version.committee_approved && <Badge bg="success">Approved</Badge>}
-                          </div>
-                        </div>
-                        {renderTable(version.sections)}
-                      </Col>
-                      <Col md={4}>
-                        <Form.Group>
-                          <Form.Label className="fw-semibold">Committee Note (optional)</Form.Label>
-                          <Form.Control
-                            as="textarea"
-                            rows={5}
-                            value={noteById[version.id] || ''}
-                            onChange={(e) => setNoteById(prev => ({ ...prev, [version.id]: e.target.value }))}
-                            placeholder="Write feedback or approval note..."
-                          />
-                        </Form.Group>
-                        <div className="d-flex gap-2 flex-wrap mt-2">
-                          <Button
-                            variant="success"
-                            disabled={submittingId === version.id}
-                            onClick={() => handleApprove(version)}
-                          >
-                            {submittingId === version.id ? <Spinner size="sm" /> : <FaCheckCircle className="me-1" />} Approve
-                          </Button>
-                          <Button
-                            variant="outline-danger"
-                            disabled={submittingId === version.id}
-                            onClick={() => handleRequestChanges(version)}
-                          >
-                            {submittingId === version.id ? <Spinner size="sm" /> : <FaTimesCircle className="me-1" />} Request Changes
-                          </Button>
-                        </div>
-                        <div className="mt-3">
-                          <div className="fw-semibold mb-2">Faculty Comments</div>
-                          <div className="border rounded p-2 bg-light" style={{maxHeight:'220px', overflowY:'auto'}}>
-                            {(facultyCommentsById[version.id] || []).length === 0 ? (
-                              <div className="text-muted">No faculty comments.</div>
-                            ) : (
-                              (facultyCommentsById[version.id] || []).map(c => (
-                                <div key={c.id} className="mb-2">
-                                  <div className="small text-muted">{c.faculty_name || c.faculty_email} • {new Date(c.created_at).toLocaleString()}</div>
-                                  <div>{c.comment}</div>
+                <Card className="mb-4 border-0 shadow-sm bg-light">
+                  <Card.Body>
+                    <div className="d-flex align-items-center gap-3 flex-wrap">
+                      <span className="fw-bold text-primary"><FaUserTie className="me-2"/> Filter by Level:</span>
+                      {levels.map(l => (
+                        <Button key={l} variant={selectedLevel===l? 'primary':'outline-primary'} size="sm" onClick={()=>setSelectedLevel(l)} className="rounded-pill px-3">
+                            Level {l}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className="mt-2 text-muted small ms-1">
+                      * Approving a schedule marks it as the official version for this level.
+                    </div>
+                  </Card.Body>
+                </Card>
+
+                <Card className="border-0 shadow-sm">
+                  <Card.Header className="bg-white fw-bold border-bottom py-3 text-dark">
+                      Pending Schedules for Level {selectedLevel}
+                  </Card.Header>
+                  <Card.Body className="p-0">
+                    {loading ? (
+                      <div className="text-center py-5"><Spinner animation="border" variant="primary"/></div>
+                    ) : filteredPending.length === 0 ? (
+                      <div className="text-center py-5 text-muted">
+                          <p className="mb-0">No schedules awaiting approval for Level {selectedLevel}.</p>
+                      </div>
+                    ) : (
+                      <ListGroup variant="flush">
+                        {filteredPending.map(version => (
+                          <ListGroup.Item key={version.id} className={`p-4 ${version.committee_approved ? 'bg-success bg-opacity-10' : ''}`}>
+                            <Row>
+                              <Col lg={8}>
+                                <div className="mb-3 d-flex justify-content-between align-items-start">
+                                  <div>
+                                      <h5 className="fw-bold text-dark mb-1">{version.version_comment || 'Untitled Version'}</h5>
+                                      <small className="text-muted">Created: {new Date(version.created_at).toLocaleString()}</small>
+                                  </div>
+                                  <div className="d-flex gap-2">
+                                    {version.is_active && <Badge bg="primary">Active</Badge>}
+                                    {version.scheduler_approved && <Badge bg="secondary">From Scheduler</Badge>}
+                                    {version.committee_approved && <Badge bg="success">Approved</Badge>}
+                                  </div>
                                 </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      </Col>
-                    </Row>
-                  </ListGroup.Item>
-                ))}
-              </ListGroup>
-            )}
-          </Card.Body>
+                                {renderTable(version.sections)}
+                              </Col>
+                              
+                              <Col lg={4} className="border-start mt-4 mt-lg-0 ps-lg-4">
+                                <Form.Group className="mb-3">
+                                  <Form.Label className="fw-bold small text-uppercase text-muted">Committee Decision Note</Form.Label>
+                                  <Form.Control
+                                    as="textarea"
+                                    rows={4}
+                                    className="bg-light border-0 shadow-sm"
+                                    value={noteById[version.id] || ''}
+                                    onChange={(e) => setNoteById(prev => ({ ...prev, [version.id]: e.target.value }))}
+                                    placeholder="Write feedback for changes or approval note..."
+                                  />
+                                </Form.Group>
+                                
+                                <div className="d-grid gap-2">
+                                  <Button
+                                    variant="success"
+                                    className="fw-bold shadow-sm"
+                                    disabled={submittingId === version.id}
+                                    onClick={() => handleApprove(version)}
+                                  >
+                                    {submittingId === version.id ? <Spinner size="sm" /> : <><FaCheckCircle className="me-2" /> Approve Schedule</>}
+                                  </Button>
+                                  <Button
+                                    variant="outline-danger"
+                                    className="fw-bold"
+                                    disabled={submittingId === version.id}
+                                    onClick={() => handleRequestChanges(version)}
+                                  >
+                                    {submittingId === version.id ? <Spinner size="sm" /> : <><FaTimesCircle className="me-2" /> Request Changes</>}
+                                  </Button>
+                                </div>
+
+                                <div className="mt-4 pt-3 border-top">
+                                  <div className="fw-bold small text-uppercase text-muted mb-2">Faculty Comments</div>
+                                  <div className="rounded bg-light p-2 border" style={{maxHeight:'200px', overflowY:'auto', fontSize:'0.85rem'}}>
+                                    {(facultyCommentsById[version.id] || []).length === 0 ? (
+                                      <div className="text-center text-muted py-2">No faculty comments yet.</div>
+                                    ) : (
+                                      (facultyCommentsById[version.id] || []).map(c => (
+                                        <div key={c.id} className="mb-2 pb-2 border-bottom last:border-0">
+                                          <div className="fw-bold text-dark">{c.faculty_name || 'Faculty Member'}</div>
+                                          <div className="text-secondary">{c.comment}</div>
+                                          <div className="text-muted" style={{fontSize:'0.7rem'}}>{new Date(c.created_at).toLocaleDateString()}</div>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              </Col>
+                            </Row>
+                          </ListGroup.Item>
+                        ))}
+                      </ListGroup>
+                    )}
+                  </Card.Body>
+                </Card>
+            </Card.Body>
         </Card>
       </Container>
     </div>

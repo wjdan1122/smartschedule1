@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword'; // ✅ استيراد الصفحة الجديدة
 import Dashboard from './pages/Dashboard.jsx';
 import StudentDashboard from './pages/StudentDashboard.jsx';
 import ManageSchedules from './pages/ManageSchedules.jsx';
@@ -20,7 +21,6 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
 
 // --- 3. تعريف مكون الحماية ---
-// هذا المكون يتحقق فقط مما إذا كان المستخدم مسجل دخوله أم لا
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');
   return token ? children : <Navigate to="/login" replace />;
@@ -47,6 +47,9 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        
+        {/* 👇 المسار الجديد لإعادة تعيين كلمة المرور (يحتوي على رمز التحقق) */}
+        <Route path="/reset-password" element={<ResetPassword />} /> 
 
         {/* --- المسارات المحمية (تتطلب تسجيل الدخول) --- */}
 
@@ -62,7 +65,6 @@ function App() {
         {/* مسارات لوحة تحكم الطالب */}
         <Route path="/student-dashboard" element={<ProtectedRoute><StudentDashboard /></ProtectedRoute>} />
         <Route path="/elective-voting" element={<ProtectedRoute><ElectiveVoting /></ProtectedRoute>} />
-        {/* أضف هنا أي مسارات أخرى خاصة بالطالب مثل /my-courses */}
 
         {/* --- المسارات الافتراضية والاحتياطية --- */}
         <Route path="/" element={<ProtectedRoute><RedirectByRole /></ProtectedRoute>} />

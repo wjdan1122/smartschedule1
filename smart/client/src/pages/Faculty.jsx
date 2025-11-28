@@ -39,9 +39,10 @@ const Faculty = () => {
     setLoading(true);
     setError('');
     try {
+      // 👇 تم تحديث الروابط هنا
       const [vers, crs] = await Promise.all([
-        fetchJson(`http://localhost:5000/api/schedule-versions/approved?level=${selectedLevel}`),
-        fetchJson('http://localhost:5000/api/courses')
+        fetchJson(`https://smartschedule1-b64l.onrender.com/api/schedule-versions/approved?level=${selectedLevel}`),
+        fetchJson('https://smartschedule1-b64l.onrender.com/api/courses')
       ]);
       const approved = vers || [];
       setVersions(approved);
@@ -50,7 +51,8 @@ const Faculty = () => {
       const entries = await Promise.all(
         approved.map(async v => {
           try {
-            const mine = await fetchJson(`http://localhost:5000/api/schedule-versions/${v.id}/my-faculty-comments`);
+            // 👇 تم تحديث الرابط هنا
+            const mine = await fetchJson(`https://smartschedule1-b64l.onrender.com/api/schedule-versions/${v.id}/my-faculty-comments`);
             return [v.id, mine || []];
           } catch { return [v.id, []]; }
         })
@@ -132,10 +134,12 @@ const Faculty = () => {
     if (!text) return alert('Please write a comment first.');
     setSendingId(version.id);
     try {
-      await fetchJson(`http://localhost:5000/api/schedule-versions/${version.id}/faculty-comments`, 'POST', { comment: text });
+      // 👇 تم تحديث الرابط هنا
+      await fetchJson(`https://smartschedule1-b64l.onrender.com/api/schedule-versions/${version.id}/faculty-comments`, 'POST', { comment: text });
       setNoteById(prev => ({ ...prev, [version.id]: '' }));
       // refresh my comments only
-      const mine = await fetchJson(`http://localhost:5000/api/schedule-versions/${version.id}/my-faculty-comments`);
+      // 👇 تم تحديث الرابط هنا
+      const mine = await fetchJson(`https://smartschedule1-b64l.onrender.com/api/schedule-versions/${version.id}/my-faculty-comments`);
       setMyCommentsById(prev => ({ ...prev, [version.id]: mine || [] }));
     } catch (e) {
       alert(e.message || 'Failed to send comment.');

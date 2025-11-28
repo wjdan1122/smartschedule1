@@ -43,9 +43,11 @@ const ScheduleViewer = ({ level, token, studentId }) => {
         setLoading(true);
         setError(null);
         try {
-            const coursesData = await fetchData('http://localhost:5000/api/courses');
+            // 👇 تم تعديل الرابط هنا
+            const coursesData = await fetchData('https://smartschedule1-b64l.onrender.com/api/courses');
             setAllCourses(coursesData || []);
-            const scheduleData = await fetchData(`http://localhost:5000/api/schedules/level/${level}`);
+            // 👇 تم تعديل الرابط هنا
+            const scheduleData = await fetchData(`https://smartschedule1-b64l.onrender.com/api/schedules/level/${level}`);
             setSchedule(scheduleData.schedule);
         } catch (err) {
             setError(err.message);
@@ -76,7 +78,8 @@ const ScheduleViewer = ({ level, token, studentId }) => {
 
         setIsSubmitting(true);
         try {
-            await fetchData('http://localhost:5000/api/comments', 'POST', payload);
+            // 👇 تم تعديل الرابط هنا
+            await fetchData('https://smartschedule1-b64l.onrender.com/api/comments', 'POST', payload);
             setNewComment("");
             setSubmitSuccess("Comment submitted successfully!");
         } catch (err) {
@@ -225,4 +228,3 @@ function StudentDashboard() {
 }
 
 export default StudentDashboard;
-

@@ -23,25 +23,32 @@ api.interceptors.request.use(
   }
 );
 
+// --------------------------------------------------------
+// 👇 تعريف الدوال كـ NAMED EXPORTS (يحل مشكلة "authAPI is not exported")
+// --------------------------------------------------------
+
 // Authentication API
 export const authAPI = {
   login: (email, password) => api.post('/api/auth/login', { email, password }),
   registerUser: (data) => api.post('/api/auth/register-user', data),
   registerStudent: (data) => api.post('/api/auth/register-student', data),
-  requestPasswordReset: (email) => api.post('/api/auth/forgot-password', { email })
+  requestPasswordReset: (email) => api.post('/api/auth/forgot-password', { email }),
+  resetPassword: (token, newPassword) => api.post('/api/auth/reset-password', { token, newPassword }) // ✅ الميزة الجديدة
 };
 
 // Student API
 export const studentAPI = {
   getAll: () => api.get('/api/students'),
-  getById: (userId) => api.get(`/api/student/${userId}`)
+  getById: (userId) => api.get(`/api/student/${userId}`),
+  // ... (يجب إضافة الدوال هنا إذا كانت موجودة في ملفك الأصلي)
 };
 
 // Course API
 export const courseAPI = {
   getAll: () => api.get('/api/courses'),
   getElective: () => api.get('/api/courses/elective'),
-  create: (data) => api.post('/api/courses', data)
+  create: (data) => api.post('/api/courses', data),
+  // ...
 };
 
 // Voting API

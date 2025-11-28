@@ -46,13 +46,15 @@ function ElectiveVoting() {
             setStudentId(user.id);
             setUserInfo({ name: user.name || 'Student', email: user.email || '' });
 
-            const existingVotes = await fetchData(`http://localhost:5000/api/votes/student/${user.id}`);
+            // 👇 تم تحديث الرابط هنا
+            const existingVotes = await fetchData(`https://smartschedule1-b64l.onrender.com/api/votes/student/${user.id}`);
             if (existingVotes.length > 0) {
                 setSubmitted(true);
                 return;
             }
 
-            const electivesData = await fetchData("http://localhost:5000/api/courses/elective");
+            // 👇 تم تحديث الرابط هنا
+            const electivesData = await fetchData("https://smartschedule1-b64l.onrender.com/api/courses/elective");
             setElectives(electivesData);
             // Initialize selections state
             const initialSelections = {};
@@ -102,7 +104,8 @@ function ElectiveVoting() {
 
         try {
             for (const vote of selected) {
-                await fetchData("http://localhost:5000/api/vote", "POST", {
+                // 👇 تم تحديث الرابط هنا
+                await fetchData("https://smartschedule1-b64l.onrender.com/api/vote", "POST", {
                     student_id: studentId,
                     course_id: vote.course_id,
                     vote_value: vote.priority
@@ -209,4 +212,3 @@ function ElectiveVoting() {
 }
 
 export default ElectiveVoting;
-
