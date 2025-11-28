@@ -1,4 +1,4 @@
-console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & Strict JSON) ✅✅✅");
+console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & Final JSON Logic Fix) ✅✅✅");
 console.log("👉 Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -891,7 +891,6 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       
       Output Format: JSON Array of objects: [{ "course_id": number, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }]
       
-      // 💡 التعليمات الإضافية لفرض إخراج JSON نقي 
       **STRICTLY AND ONLY OUTPUT THE JSON ARRAY. DO NOT INCLUDE ANY MARKDOWN TAGS (e.g., \`\`\`json), NO EXPLANATION, AND NO INTRODUCTORY TEXT. START WITH [ AND END WITH ].**
     `;
 
@@ -934,8 +933,15 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     let jsonText = result.choices[0].message.content; 
     
     try {
-      // ✅ محاولة تحليل JSON: هذا هو المكان الذي كان يفشل
-      const generatedSeSchedule = JSON.parse(jsonText);
+      let generatedSeSchedule = JSON.parse(jsonText);
+      
+      // 💡💡💡 التصحيح النهائي: التأكد من أن generatedSeSchedule هي مصفوفة (Array)
+      if (!Array.isArray(generatedSeSchedule)) {
+        // إذا كان كائنًا واحدًا، ضعه داخل مصفوفة
+        generatedSeSchedule = [generatedSeSchedule];
+        console.log('✅ AI output wrapped in Array to allow mapping.'); // رسالة تأكيد في السجلات
+      }
+
       const correctedSeSchedule = generatedSeSchedule.map(section => ({
         ...section,
         day_code: section.day, 
