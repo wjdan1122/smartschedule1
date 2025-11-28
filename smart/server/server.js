@@ -1,4 +1,4 @@
-console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & Strict JSON) ✅✅✅");
+console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE ✅✅✅");
 console.log("👉 Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -57,7 +57,7 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 app.use(
   cors({
     origin: [
-      'http://localhost:3000',
+      'http://localhost:3000', 
       'http://localhost:3001',
       'https://smartschedule1-b64l.onrender.com',
       'https://endearing-kulfi-c96605.netlify.app' // ✅ رابط موقعك
@@ -74,7 +74,7 @@ const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER, // سيتم جلبه من Render
-    pass: process.env.EMAIL_PASS  // سيتم جلبه من Render
+    pass: process.env.EMAIL_PASS  // سيتم جلبه من Render
   }
 });
 
@@ -522,13 +522,13 @@ app.get('/api/votes/results', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const query = `
-          SELECT c.course_id, c.name, c.is_approved, s.level AS student_level, COUNT(v.vote_id) AS vote_count
-          FROM courses c
-          LEFT JOIN votes v ON c.course_id = v.course_id
-          LEFT JOIN students s ON v.student_id = s.student_id
-          WHERE c.is_elective = true
-          GROUP BY c.course_id, c.name, c.is_approved, s.level
-          ORDER BY c.course_id, s.level;
+            SELECT c.course_id, c.name, c.is_approved, s.level AS student_level, COUNT(v.vote_id) AS vote_count
+            FROM courses c
+            LEFT JOIN votes v ON c.course_id = v.course_id
+            LEFT JOIN students s ON v.student_id = s.student_id
+            WHERE c.is_elective = true
+            GROUP BY c.course_id, c.name, c.is_approved, s.level
+            ORDER BY c.course_id, s.level;
         `;
     const result = await client.query(query);
     res.json(result.rows);
@@ -561,9 +561,9 @@ app.post('/api/electives/approve', authenticateToken, async (req, res) => {
     if (!course_id || !level) return res.status(400).json({ error: 'Course ID and Level are required.' });
     await client.query('BEGIN');
     const insertQuery = `
-          INSERT INTO approved_electives_by_level (course_id, level) 
-          VALUES ($1, $2)
-          ON CONFLICT (course_id, level) DO NOTHING;
+            INSERT INTO approved_electives_by_level (course_id, level) 
+            VALUES ($1, $2)
+            ON CONFLICT (course_id, level) DO NOTHING;
         `;
     await client.query(insertQuery, [course_id, level]);
     await client.query('UPDATE courses SET is_approved = true WHERE course_id = $1', [course_id]);
@@ -728,7 +728,7 @@ app.get('/api/schedule-versions/pending-committee', authenticateToken, requireCo
       SELECT *
       FROM schedule_versions
       WHERE COALESCE(scheduler_approved, false) = true
-        OR is_active = true
+         OR is_active = true
       ORDER BY created_at DESC`;
     const result = await client.query(sql);
     res.json(result.rows);
@@ -845,14 +845,14 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
 });
 
 // ============================================
-// AI SCHEDULER ROUTE (SWITCHED TO OPENAI)
+// AI SCHEDULER ROUTE (UPDATED for gemini-pro)
 // ============================================
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { level, currentLevel, currentSchedule, user_command } = req.body;
     
-    // Basic data gathering (Same as before)
+    // Basic data gathering
     const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
     const rules = rulesResult.rows.map(r => r.text);
     const coursesResult = await client.query(
@@ -871,8 +871,8 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       `${sec.day_code} from ${sec.start_time?.substring(0, 5)} to ${sec.end_time?.substring(0, 5)} for ${sec.dept_code}`
     );
 
-    // Prepare prompt parts (Modified for clarity with OpenAI)
-    const systemInstruction = `You are a university academic scheduler AI. Your task is to schedule the provided list of Software Engineering (SE) courses into available slots, following all rules strictly. You MUST treat the 'occupied slots' list as fixed and unmovable. Your final output MUST be a JSON array ONLY.`;
+    // Prepare prompt parts
+    const systemInstruction = `You are a university academic scheduler AI. Your task is to schedule the provided list of Software Engineering (SE) courses into available slots, following all rules strictly. You MUST treat the 'occupied slots' list as fixed and unmovable.`;
     const userQuery = `
       Objective: Generate a weekly schedule for Level ${currentLevel} students.
       Rules:
@@ -882,76 +882,63 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       4. Start/End times between 08:00 and 15:00.
       5. No overlap with occupied slots.
       6. Use valid days: S, M, T, W, H.
-      7. Output valid JSON array ONLY. Do not include any text before or after the JSON array.
+      7. Output valid JSON array ONLY.
 
       Required SE Courses: ${JSON.stringify(requiredCourses.map(c => ({ course_id: c.course_id, name: c.name, credit: c.credit, section_type: 'LECTURE' })))}
       Occupied Slots: ${JSON.stringify(occupiedSlots)}
       Constraints: ${JSON.stringify(rules)}
-      User Adjustment: ${user_command}
       
       Output Format: JSON Array of objects: [{ "course_id": number, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }]
-      
-      // 💡 التعليمات الإضافية لفرض إخراج JSON نقي 
-      **STRICTLY AND ONLY OUTPUT THE JSON ARRAY. DO NOT INCLUDE ANY MARKDOWN TAGS (e.g., \`\`\`json), NO EXPLANATION, AND NO INTRODUCTORY TEXT. START WITH [ AND END WITH ].**
     `;
 
-    // 🛑 تطبيق التحول إلى OpenAI
-    const apiKey = process.env.OPENAI_API_KEY; // ⬅️ يستخدم مفتاح OpenAI
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured.' });
+      return res.status(500).json({ error: 'GEMINI_API_KEY is not configured.' });
     }
 
-    const apiUrl = 'https://api.openai.com/v1/chat/completions'; // ⬅️ نقطة نهاية OpenAI
+    // ✅✅✅ CRITICAL AI FIX ✅✅✅
+    // Using gemini-pro with merged payload (Safest option)
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
     
     const payload = {
-      model: 'gpt-3.5-turbo-1106', // نموذج سريع وفعال يمكنه إخراج JSON
-      messages: [
-        { role: "system", content: systemInstruction },
-        { role: "user", content: userQuery }
-      ],
-      response_format: { type: "json_object" }, // يضمن إخراج JSON صحيح
-      temperature: 0.7 
+      contents: [{
+        parts: [{
+          text: `${systemInstruction}\n\n${userQuery}`
+        }]
+      }],
+      generationConfig: {
+        temperature: 0.9
+      }
     };
 
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}` // طريقة المصادقة لـ OpenAI
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
 
     const result = await response.json();
-    
-    // معالجة استجابة OpenAI
-    if (!result.choices || result.choices.length === 0 || !result.choices[0].message.content) {
-        console.error('AI Response Error:', JSON.stringify(result, null, 2));
-        const aiError = result.error?.message || 'AI did not return a valid response. Check OpenAI quota/key.';
-        throw new Error(aiError); 
+    if (!result.candidates || result.candidates.length === 0) {
+       console.error('AI Response Error:', JSON.stringify(result, null, 2));
+       throw new Error('AI did not return any candidates. Check quota/key.');
     }
 
-    let jsonText = result.choices[0].message.content; 
-    
-    try {
-      // ✅ محاولة تحليل JSON: هذا هو المكان الذي كان يفشل
-      const generatedSeSchedule = JSON.parse(jsonText);
-      const correctedSeSchedule = generatedSeSchedule.map(section => ({
-        ...section,
-        day_code: section.day, 
-        is_ai_generated: true,
-        dept_code: 'SE',
-        student_group: currentSchedule.id
-      }));
-    
-      const finalSchedule = [...fixedSections, ...correctedSeSchedule];
-      res.json({ success: true, message: 'Schedule generated by AI.', schedule: finalSchedule });
-    } catch (e) {
-      console.error('JSON Parsing Error from AI:', e.message, jsonText);
-      // الرسالة التي تظهر في الواجهة الأمامية
-      throw new Error('AI returned schedule in an unparsable JSON format. Try adjusting the prompt rules.');
-    }
-    
+    let jsonText = result.candidates[0].content.parts[0].text;
+    // Clean up markdown if present
+    jsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+    const generatedSeSchedule = JSON.parse(jsonText);
+    const correctedSeSchedule = generatedSeSchedule.map(section => ({
+      ...section,
+      day_code: section.day,
+      is_ai_generated: true,
+      dept_code: 'SE',
+      student_group: currentSchedule.id
+    }));
+
+    const finalSchedule = [...fixedSections, ...correctedSeSchedule];
+    res.json({ success: true, message: 'Schedule generated by AI.', schedule: finalSchedule });
+
   } catch (error) {
     console.error('AI Schedule Generation error:', error);
     res.status(500).json({ error: error.message || 'Failed to process AI request.' });
@@ -1022,13 +1009,13 @@ app.get('/api/comments/all', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const query = `
-          SELECT c.id as comment_id, c.comment, c.created_at, s.student_id, s.level as student_level, u.name as student_name, sv.id as schedule_version_id, sv.version_comment
-          FROM comments c
-          LEFT JOIN students s ON c.student_id = s.student_id
-          LEFT JOIN users u ON s.user_id = u.user_id
-          LEFT JOIN schedule_versions sv ON c.schedule_version_id = sv.id
-          WHERE c.user_id IS NULL 
-          ORDER BY c.created_at DESC;
+            SELECT c.id as comment_id, c.comment, c.created_at, s.student_id, s.level as student_level, u.name as student_name, sv.id as schedule_version_id, sv.version_comment
+            FROM comments c
+            LEFT JOIN students s ON c.student_id = s.student_id
+            LEFT JOIN users u ON s.user_id = u.user_id
+            LEFT JOIN schedule_versions sv ON c.schedule_version_id = sv.id
+            WHERE c.user_id IS NULL 
+            ORDER BY c.created_at DESC;
         `;
     const result = await client.query(query);
     res.json(result.rows);
