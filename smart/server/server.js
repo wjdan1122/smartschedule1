@@ -1,4 +1,4 @@
-console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & Final JSON Logic Fix) ✅✅✅");
+console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & Final JSON Cleaner) ✅✅✅");
 console.log("👉 Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -933,13 +933,15 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     let jsonText = result.choices[0].message.content; 
     
     try {
+      // 💡💡💡 التصحيح النهائي: تنظيف النص من علامات الـ Markdown والفراغات
+      jsonText = jsonText.trim().replace(/```json|```/g, '').trim(); 
+      
       let generatedSeSchedule = JSON.parse(jsonText);
       
-      // 💡💡💡 التصحيح النهائي: التأكد من أن generatedSeSchedule هي مصفوفة (Array)
+      // التأكد من أن generatedSeSchedule هي مصفوفة (Array) لحل مشكلة map is not a function
       if (!Array.isArray(generatedSeSchedule)) {
-        // إذا كان كائنًا واحدًا، ضعه داخل مصفوفة
         generatedSeSchedule = [generatedSeSchedule];
-        console.log('✅ AI output wrapped in Array to allow mapping.'); // رسالة تأكيد في السجلات
+        console.log('✅ AI output wrapped in Array to allow mapping.'); 
       }
 
       const correctedSeSchedule = generatedSeSchedule.map(section => ({
