@@ -969,12 +969,15 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       let generatedSeSchedule = null;
       if (message.parsed && message.parsed.schedule) {
         generatedSeSchedule = message.parsed.schedule;
+      } else if (message.parsed && Array.isArray(message.parsed)) {
+        generatedSeSchedule = message.parsed;
       }
       if (!generatedSeSchedule) {
         jsonText = jsonText.trim().replace(/```json|```/g, '').trim();
         if (jsonText) {
           const parsed = JSON.parse(jsonText);
-          generatedSeSchedule = parsed.schedule || parsed;
+          if (parsed && parsed.schedule) generatedSeSchedule = parsed.schedule;
+          else if (Array.isArray(parsed)) generatedSeSchedule = parsed;
         }
       }
       
