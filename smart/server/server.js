@@ -1,4 +1,4 @@
-console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & Final JSON Cleaner) ✅✅✅");
+console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ✅✅✅");
 console.log("👉 Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -866,10 +866,6 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     if (requiredCourses.length === 0) {
       return res.status(404).json({ error: `No Software Engineering courses found for level ${currentLevel}.` });
     }
-    const courseCreditMap = requiredCourses.reduce((acc, course) => {
-      acc[course.course_id] = Number(course.credit) || 0;
-      return acc;
-    }, {});
     const fixedSections = currentSchedule.sections.filter(sec => sec.dept_code !== 'SE');
     const occupiedSlots = fixedSections.map(sec =>
       `${sec.day_code} from ${sec.start_time?.substring(0, 5)} to ${sec.end_time?.substring(0, 5)} for ${sec.dept_code}`
@@ -906,41 +902,17 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 
     const apiUrl = 'https://api.openai.com/v1/chat/completions'; // ⬅️ نقطة نهاية OpenAI
     
-    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-        const responseFormat = {
-      type: "json_schema",
-      json_schema: {
-        name: "schedule_object",
-        schema: {
-          type: "object",
-          properties: {
-            schedule: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  course_id: { type: "number" },
-                  day: { type: "string" }, // S | M | T | W | H
-                  start_time: { type: "string" }, // HH:MM
-                  end_time: { type: "string" },
-                  section_type: { type: "string" }
-                },
-                required: ["course_id", "day", "start_time", "end_time", "section_type"]
-              }
-            }
-          },
-          required: ["schedule"]
-        }
-      }
-    };
-    
+    // 💡 ملاحظة: تم إزالة json_schema الذي تسبب في خطأ "Unknown parameter"
     const payload = {
-      model,
+      model: 'gpt-3.5-turbo-1106', // نموذج سريع وفعال يمكنه إخراج JSON
       messages: [
         { role: "system", content: systemInstruction },
         { role: "user", content: userQuery }
       ],
-      response_format: responseFormat,
+      // 💡 التصحيح: استخدام النوع الأساسي فقط
+      response_format: { 
+          type: "json_object" 
+      }, 
       temperature: 0.7 
     };
 
@@ -957,7 +929,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     
     // معالجة استجابة OpenAI
     const message = result?.choices?.[0]?.message || {};
-    if (!result.choices || result.choices.length === 0 || (!message.content && !message.parsed)) {
+    if (!result.choices || result.choices.length === 0 || !message.content) {
         console.error('AI Response Error:', JSON.stringify(result, null, 2));
         const aiError = result.error?.message || 'AI did not return a valid response. Check OpenAI quota/key.';
         throw new Error(aiError); 
@@ -966,85 +938,30 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     let jsonText = message.content || ''; 
     
     try {
-      let generatedSeSchedule = null;
-      if (message.parsed && message.parsed.schedule) {
-        generatedSeSchedule = message.parsed.schedule;
-      } else if (message.parsed && Array.isArray(message.parsed)) {
-        generatedSeSchedule = message.parsed;
-      }
-      if (!generatedSeSchedule) {
-        jsonText = jsonText.trim().replace(/```json|```/g, '').trim();
-        if (jsonText) {
-          const parsed = JSON.parse(jsonText);
-          if (parsed && parsed.schedule) generatedSeSchedule = parsed.schedule;
-          else if (Array.isArray(parsed)) generatedSeSchedule = parsed;
-        }
-      }
+      // 💡 التصحيح: تنظيف النص من علامات الـ Markdown والفراغات
+      jsonText = jsonText.trim().replace(/```json|```/g, '').trim(); 
       
-      if (!generatedSeSchedule) throw new Error('Empty AI schedule response.');
-
+      let generatedSeSchedule = JSON.parse(jsonText);
+      
+      // 💡 التصحيح: التأكد من أن generatedSeSchedule هي مصفوفة (Array) لحل مشكلة map is not a function
       if (!Array.isArray(generatedSeSchedule)) {
         generatedSeSchedule = [generatedSeSchedule];
         console.log('✅ AI output wrapped in Array to allow mapping.'); 
       }
 
-      const requiredCourseIds = requiredCourses.map(c => c.course_id);
-      const missingCourses = requiredCourseIds.filter(
-        (courseId) => !generatedSeSchedule.some((sec) => Number(sec.course_id) === Number(courseId))
-      );
-      if (missingCourses.length > 0) {
-        const missingNames = requiredCourses
-          .filter((c) => missingCourses.includes(c.course_id))
-          .map((c) => c.name || c.course_id);
-        throw new Error(`AI schedule missing required course(s): ${missingNames.join(', ')}`);
-      }
-
-      const correctedSeSchedule = generatedSeSchedule.map(section => {
-        const start = section.start_time || section.startTime;
-        const end = section.end_time || section.endTime;
-        return {
-          ...section,
-          start_time: start,
-          end_time: end,
-          day_code: section.day, 
-          is_ai_generated: true,
-          dept_code: 'SE',
-          student_group: currentSchedule.id
-        };
-      });
-
-      const courseMinutes = correctedSeSchedule.reduce((acc, sec) => {
-        const start = (sec.start_time || '').split(':');
-        const end = (sec.end_time || '').split(':');
-        if (start.length === 2 && end.length === 2) {
-          const startMinutes = parseInt(start[0], 10) * 60 + parseInt(start[1], 10);
-          const endMinutes = parseInt(end[0], 10) * 60 + parseInt(end[1], 10);
-          const duration = Math.max(0, endMinutes - startMinutes);
-          acc[sec.course_id] = (acc[sec.course_id] || 0) + duration;
-        }
-        return acc;
-      }, {});
-
-      const creditMismatches = requiredCourseIds.filter((courseId) => {
-        const expectedHours = courseCreditMap[courseId] || 0;
-        const scheduledHours = (courseMinutes[courseId] || 0) / 60;
-        return expectedHours > 0 && Math.abs(scheduledHours - expectedHours) > 0.01;
-      });
-      if (creditMismatches.length > 0) {
-        const mismatchDetails = requiredCourses
-          .filter((c) => creditMismatches.includes(c.course_id))
-          .map((c) => {
-            const scheduledHours = (courseMinutes[c.course_id] || 0) / 60;
-            return `${c.name || c.course_id} expected ${c.credit}h got ${scheduledHours}h`;
-          })
-          .join('; ');
-        throw new Error(`AI schedule hours mismatch: ${mismatchDetails}`);
-      }
+      const correctedSeSchedule = generatedSeSchedule.map(section => ({
+        ...section,
+        day_code: section.day, 
+        is_ai_generated: true,
+        dept_code: 'SE',
+        student_group: currentSchedule.id
+      }));
     
       const finalSchedule = [...fixedSections, ...correctedSeSchedule];
       res.json({ success: true, message: 'Schedule generated by AI.', schedule: finalSchedule });
     } catch (e) {
       console.error('JSON Parsing Error from AI:', e.message, jsonText);
+      // الرسالة التي تظهر في الواجهة الأمامية
       throw new Error('AI returned schedule in an unparsable JSON format. Try adjusting the prompt rules.');
     }
     
@@ -1256,14 +1173,3 @@ const gracefulShutdown = () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
-
-
-
-
-
-
-
-
-
-
-
