@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Alert, Spinner, Table, Form, ListGroup, Badge, Navbar, Nav } from 'react-bootstrap';
 import { FaFilter, FaCalendarAlt, FaSyncAlt, FaSave, FaCheckCircle, FaEdit, FaTrash, FaHome, FaUsers, FaBalanceScale, FaBell, FaBook, FaSignOutAlt } from 'react-icons/fa';
 import { useNavigate, useLocation } from 'react-router-dom';
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
 import '../App.css';
 
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'];
@@ -152,12 +154,53 @@ const ManageSchedules = () => {
     const [studentCount, setStudentCount] = useState(25);
     const [savedVersions, setSavedVersions] = useState([]);
     const [sendingId, setSendingId] = useState(null);
-    const [userInfo, setUserInfo] = useState({ name: '', role: '' });
+    const [userInfo, setUserInfo] = useState({ name: '', role: '', id: '', email: '' });
+    const [onlineEditors, setOnlineEditors] = useState([]);
 
     useEffect(() => {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
-        setUserInfo({ name: user.name, role: user.role });
+        setUserInfo({
+            name: user.name || (user.email ? user.email.split('@')[0] : 'Scheduler'),
+            role: user.role || '',
+            id: user.id || user.user_id || user.userId || '',
+            email: user.email || ''
+        });
     }, []);
+
+    useEffect(() => {
+        const doc = new Y.Doc();
+        const providerUrl = process.env.REACT_APP_COLLAB_ENDPOINT || 'wss://smartschedule1-b64l.onrender.com/collaboration';
+        const roomName = `manage-schedules-${currentLevel}`;
+        const provider = new WebsocketProvider(providerUrl, roomName, doc, { connect: true });
+        const awareness = provider.awareness;
+        const selfId = userInfo.id || userInfo.email || userInfo.name || 'scheduler';
+        const selfName = userInfo.name || userInfo.email || 'Scheduler';
+
+        awareness.setLocalState({ userId: selfId, name: selfName, role: userInfo.role || 'scheduler' });
+
+        const updateOnlineEditors = () => {
+            const states = Array.from(awareness.getStates().entries());
+            const unique = [];
+            const seen = new Set();
+            states.forEach(([clientId, state]) => {
+                if (!state || !state.userId) return;
+                if (state.userId === selfId) return; // don't show current user
+                if (seen.has(state.userId)) return;
+                seen.add(state.userId);
+                unique.push({ clientId, userId: state.userId, name: state.name || 'Guest' });
+            });
+            setOnlineEditors(unique);
+        };
+
+        updateOnlineEditors();
+        awareness.on('change', updateOnlineEditors);
+
+        return () => {
+            awareness.off?.('change', updateOnlineEditors);
+            provider.destroy();
+            doc.destroy();
+        };
+    }, [currentLevel, userInfo]);
 
     const fetchAllData = useCallback(async () => {
         setLoading(true);
@@ -312,6 +355,18 @@ const ManageSchedules = () => {
                     
                     <Card.Body className="p-4 p-lg-5">
                         {error && <Alert variant="danger">{error}</Alert>}
+                        <div className="mb-3 d-flex align-items-center flex-wrap gap-2">
+                            <span className="fw-bold text-primary mb-0">Online now:</span>
+                            {onlineEditors.length === 0 ? (
+                                <Badge bg="light" text="dark" className="border border-primary text-primary px-3 py-2 rounded-pill">Just you</Badge>
+                            ) : (
+                                onlineEditors.map((editor) => (
+                                    <Badge key={editor.userId} bg="info" text="dark" className="px-3 py-2 rounded-pill shadow-sm">
+                                        {editor.name}
+                                    </Badge>
+                                ))
+                            )}
+                        </div>
                         
                         <Row>
                             <Col md={8}>
