@@ -866,6 +866,10 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     if (requiredCourses.length === 0) {
       return res.status(404).json({ error: `No Software Engineering courses found for level ${currentLevel}.` });
     }
+    const courseCreditMap = requiredCourses.reduce((acc, course) => {
+      acc[course.course_id] = Number(course.credit) || 0;
+      return acc;
+    }, {});
     const fixedSections = currentSchedule.sections.filter(sec => sec.dept_code !== 'SE');
     const occupiedSlots = fixedSections.map(sec =>
       `${sec.day_code} from ${sec.start_time?.substring(0, 5)} to ${sec.end_time?.substring(0, 5)} for ${sec.dept_code}`
@@ -903,23 +907,29 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     const apiUrl = 'https://api.openai.com/v1/chat/completions'; // ⬅️ نقطة نهاية OpenAI
     
     const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-    const responseFormat = {
+        const responseFormat = {
       type: "json_schema",
       json_schema: {
-        name: "schedule",
+        name: "schedule_object",
         schema: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              course_id: { type: "number" },
-              day: { type: "string" }, // S | M | T | W | H
-              start_time: { type: "string" }, // HH:MM
-              end_time: { type: "string" },
-              section_type: { type: "string" }
-            },
-            required: ["course_id", "day", "start_time", "end_time", "section_type"]
-          }
+          type: "object",
+          properties: {
+            schedule: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  course_id: { type: "number" },
+                  day: { type: "string" }, // S | M | T | W | H
+                  start_time: { type: "string" }, // HH:MM
+                  end_time: { type: "string" },
+                  section_type: { type: "string" }
+                },
+                required: ["course_id", "day", "start_time", "end_time", "section_type"]
+              }
+            }
+          },
+          required: ["schedule"]
         }
       }
     };
@@ -956,10 +966,16 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     let jsonText = message.content || ''; 
     
     try {
-      let generatedSeSchedule = message.parsed || null;
+      let generatedSeSchedule = null;
+      if (message.parsed && message.parsed.schedule) {
+        generatedSeSchedule = message.parsed.schedule;
+      }
       if (!generatedSeSchedule) {
-        jsonText = jsonText.trim().replace(/```json|```/g, '').trim(); 
-        if (jsonText) generatedSeSchedule = JSON.parse(jsonText);
+        jsonText = jsonText.trim().replace(/```json|```/g, '').trim();
+        if (jsonText) {
+          const parsed = JSON.parse(jsonText);
+          generatedSeSchedule = parsed.schedule || parsed;
+        }
       }
       
       if (!generatedSeSchedule) throw new Error('Empty AI schedule response.');
@@ -969,13 +985,58 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
         console.log('✅ AI output wrapped in Array to allow mapping.'); 
       }
 
-      const correctedSeSchedule = generatedSeSchedule.map(section => ({
-        ...section,
-        day_code: section.day, 
-        is_ai_generated: true,
-        dept_code: 'SE',
-        student_group: currentSchedule.id
-      }));
+      const requiredCourseIds = requiredCourses.map(c => c.course_id);
+      const missingCourses = requiredCourseIds.filter(
+        (courseId) => !generatedSeSchedule.some((sec) => Number(sec.course_id) === Number(courseId))
+      );
+      if (missingCourses.length > 0) {
+        const missingNames = requiredCourses
+          .filter((c) => missingCourses.includes(c.course_id))
+          .map((c) => c.name || c.course_id);
+        throw new Error(`AI schedule missing required course(s): ${missingNames.join(', ')}`);
+      }
+
+      const correctedSeSchedule = generatedSeSchedule.map(section => {
+        const start = section.start_time || section.startTime;
+        const end = section.end_time || section.endTime;
+        return {
+          ...section,
+          start_time: start,
+          end_time: end,
+          day_code: section.day, 
+          is_ai_generated: true,
+          dept_code: 'SE',
+          student_group: currentSchedule.id
+        };
+      });
+
+      const courseMinutes = correctedSeSchedule.reduce((acc, sec) => {
+        const start = (sec.start_time || '').split(':');
+        const end = (sec.end_time || '').split(':');
+        if (start.length === 2 && end.length === 2) {
+          const startMinutes = parseInt(start[0], 10) * 60 + parseInt(start[1], 10);
+          const endMinutes = parseInt(end[0], 10) * 60 + parseInt(end[1], 10);
+          const duration = Math.max(0, endMinutes - startMinutes);
+          acc[sec.course_id] = (acc[sec.course_id] || 0) + duration;
+        }
+        return acc;
+      }, {});
+
+      const creditMismatches = requiredCourseIds.filter((courseId) => {
+        const expectedHours = courseCreditMap[courseId] || 0;
+        const scheduledHours = (courseMinutes[courseId] || 0) / 60;
+        return expectedHours > 0 && Math.abs(scheduledHours - expectedHours) > 0.01;
+      });
+      if (creditMismatches.length > 0) {
+        const mismatchDetails = requiredCourses
+          .filter((c) => creditMismatches.includes(c.course_id))
+          .map((c) => {
+            const scheduledHours = (courseMinutes[c.course_id] || 0) / 60;
+            return `${c.name || c.course_id} expected ${c.credit}h got ${scheduledHours}h`;
+          })
+          .join('; ');
+        throw new Error(`AI schedule hours mismatch: ${mismatchDetails}`);
+      }
     
       const finalSchedule = [...fixedSections, ...correctedSeSchedule];
       res.json({ success: true, message: 'Schedule generated by AI.', schedule: finalSchedule });
@@ -1192,6 +1253,14 @@ const gracefulShutdown = () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
+
+
+
+
+
+
+
+
 
 
 
