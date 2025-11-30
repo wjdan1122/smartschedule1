@@ -1,5 +1,5 @@
-console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ✅✅✅");
-console.log("👉 Running THIS server.js from smart3/smart/server");
+﻿console.log("âœ…âœ…âœ… RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) âœ…âœ…âœ…");
+console.log("ðŸ‘‰ Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
 const cors = require('cors');
@@ -13,11 +13,11 @@ const http = require('http');
 const crypto = require('crypto');
 const WebSocket = require('ws');
 const { setupWSConnection } = require('y-websocket/bin/utils');
-// 👇 استيراد مكتبة الإيميلات
+// ðŸ‘‡ Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ù…ÙƒØªØ¨Ø© Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„Ø§Øª
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
-// ✨ Phase 1: Import validation and authentication middleware
+// âœ¨ Phase 1: Import validation and authentication middleware
 const {
   requireScheduler,
   requireCommitteeRole,
@@ -47,7 +47,7 @@ const server = http.createServer(app);
 const COLLAB_NAMESPACE = 'collaboration';
 const wss = new WebSocket.Server({ server });
 
-// 👇 run backend on 5000
+// ðŸ‘‡ run backend on 5000
 const PORT = process.env.PORT || 5000;
 
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -60,7 +60,7 @@ app.use(
       'http://localhost:3000',
       'http://localhost:3001',
       'https://smartschedule1-b64l.onrender.com',
-      'https://endearing-kulfi-c96605.netlify.app' // ✅ رابط موقعك
+      'https://endearing-kulfi-c96605.netlify.app' // âœ… Ø±Ø§Ø¨Ø· Ù…ÙˆÙ‚Ø¹Ùƒ
     ],
     credentials: true,
   })
@@ -69,12 +69,12 @@ app.use(
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// ✅ إعداد خدمة البريد الإلكتروني
+// âœ… Ø¥Ø¹Ø¯Ø§Ø¯ Ø®Ø¯Ù…Ø© Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER, // سيتم جلبه من Render
-    pass: process.env.EMAIL_PASS  // سيتم جلبه من Render
+    user: process.env.EMAIL_USER, // Ø³ÙŠØªÙ… Ø¬Ù„Ø¨Ù‡ Ù…Ù† Render
+    pass: process.env.EMAIL_PASSÂ  // Ø³ÙŠØªÙ… Ø¬Ù„Ø¨Ù‡ Ù…Ù† Render
   }
 });
 
@@ -111,9 +111,9 @@ const pool = new Pool({
 
 pool.connect((err, client, release) => {
   if (err) {
-    console.error('❌ Error connecting to PostgreSQL database:', err.stack);
+    console.error('âŒ Error connecting to PostgreSQL database:', err.stack);
   } else {
-    console.log('✅ Successfully connected to PostgreSQL database');
+    console.log('âœ… Successfully connected to PostgreSQL database');
     release();
   }
 });
@@ -204,7 +204,7 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
   }
 });
 
-// ✅ (جديد) مسار طلب إعادة تعيين كلمة المرور
+// âœ… (Ø¬Ø¯ÙŠØ¯) Ù…Ø³Ø§Ø± Ø·Ù„Ø¨ Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±
 app.post('/api/auth/forgot-password', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -220,7 +220,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     await client.query('UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE email = $3', [resetToken, expireDate, email]);
 
-    // رابط الصفحة في Netlify
+    // Ø±Ø§Ø¨Ø· Ø§Ù„ØµÙØ­Ø© ÙÙŠ Netlify
     const resetLink = `https://endearing-kulfi-c96605.netlify.app/reset-password?token=${resetToken}`;
 
     const mailOptions = {
@@ -241,7 +241,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   }
 });
 
-// ✅ (جديد) مسار حفظ كلمة المرور الجديدة
+// âœ… (Ø¬Ø¯ÙŠØ¯) Ù…Ø³Ø§Ø± Ø­ÙØ¸ ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø©
 app.post('/api/auth/reset-password', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -850,7 +850,7 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { currentLevel, currentSchedule, seCourses, user_command } = req.body || {};
+    const { currentLevel, currentSchedule, seCourses, user_command, rules } = req.body || {};
     if (!currentLevel || !currentSchedule || !Array.isArray(currentSchedule.sections)) {
       return res.status(400).json({ error: 'currentLevel and current schedule sections are required.' });
     }
@@ -858,63 +858,85 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length ? seCourses : null;
     if (!resolvedSeCourses) {
       const coursesResult = await client.query(
-        SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
-         FROM courses c
-         LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
-         WHERE (c.level =  AND c.dept_code = 'SE')
-            OR (aebl.level = ),
+        `
+          SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
+          FROM courses c
+          LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
+          WHERE (c.level = $1 AND c.dept_code = 'SE')
+             OR (aebl.level = $1)
+        `,
         [currentLevel]
       );
       resolvedSeCourses = coursesResult.rows;
     }
+
     if (!resolvedSeCourses || resolvedSeCourses.length === 0) {
-      return res.status(404).json({ error: No Software Engineering courses found for level . });
+      return res.status(404).json({ error: `No Software Engineering courses found for level ${currentLevel}.` });
     }
 
-    const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
+    const fixedSections = (currentSchedule.sections || []).filter((section) => (section.dept_code || '').toUpperCase() !== 'SE');
     const occupiedSlots = {};
     fixedSections.forEach((section) => {
-      const dayCode = section.day_code || section.day || 'S';
-      const start = section.start_time?.substring(0, 5) || '08:00';
-      const end = section.end_time?.substring(0, 5) || '09:00';
-      occupiedSlots[${dayCode} 33430-44206] = ${section.course_name || section.dept_code};
+      const dayCode = (section.day_code || section.day || 'S').toString().trim().toUpperCase();
+      const start = (section.start_time || '08:00').substring(0, 5);
+      const end = (section.end_time || '09:00').substring(0, 5);
+      const key = `${dayCode} ${start}-${end}`;
+      occupiedSlots[key] = section.course_name || section.dept_code || 'NON_SE';
     });
 
+    const currentSeSections = (currentSchedule.sections || []).filter(
+      (section) => (section.dept_code || '').toUpperCase() === 'SE'
+    );
+    const currentScheduleSummary =
+      currentSeSections
+        .map(
+          (section) =>
+            `- ${section.course_name || section.course_id}: ${section.day_code || section.day} ${section.start_time?.substring(0, 5)}-${section.end_time?.substring(0, 5)}`
+        )
+        .join('\n') || 'None (New schedule)';
+
     const requiredCoursesText = resolvedSeCourses
-      .map((course) => ID:  | Name:  | Credit:  hrs)
+      .map((course) => `ID: ${course.course_id} | Name: ${course.name} | Credit: ${course.credit} hrs`)
       .join('\n');
 
-    const systemInstruction = 
-      You are a strict university scheduler.
-      Your ONLY task is to assign times for the provided courses.
+    const normalizedRules = Array.isArray(rules) && rules.length ? rules.join('; ') : 'No additional rules.';
 
-      CRITICAL RULES:
-      1. **ID INTEGRITY:** You MUST use the exact 'ID' provided in the 'REQUIRED COURSES' list for the 'course_id' field.
-      2. **Schedule All:** You must schedule EVERY course listed.
-      3. **Conflicts:** Do not schedule in 'Occupied Slots'.
-      4. **Format:** Return a JSON Object with a key "schedule" containing the array.
-    ;
+    const systemInstruction = `
+You are a strict university scheduler. Your ONLY task is to assign times for the provided courses.
 
-    const userQuery = 
-      CONTEXT:
-      - Level: 
+CRITICAL RULES:
+1. ID INTEGRITY: You MUST use the exact numeric "ID" provided in the "REQUIRED COURSES" list for the "course_id".
+2. Schedule ALL required courses. Do not drop any course.
+3. Avoid every slot listed under "Occupied Slots".
+4. Apply the user command if provided, but do not break rules #1-3.
+5. Output JSON ONLY with a top-level object that contains a "schedule" array. No explanations.
+`;
 
-      REQUIRED COURSES (Use these IDs exactly):
-      
+    const userQuery = `
+CONTEXT:
+- Level: ${currentLevel}
+- Current SE Schedule (preserve unless conflicts arise):
+${currentScheduleSummary}
 
-      OCCUPIED SLOTS (Forbidden times):
-      
+REQUIRED COURSES (Use these IDs exactly):
+${requiredCoursesText}
 
-      USER COMMAND:
-      ""
+OCCUPIED SLOTS (Forbidden times):
+${JSON.stringify(occupiedSlots)}
 
-      OUTPUT FORMAT:
-      {
-        "schedule": [
-          { "course_id": <NUMBER_FROM_INPUT>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }
-        ]
-      }
-    ;
+USER COMMAND:
+"${user_command || 'Generate optimal schedule'}"
+
+ADDITIONAL RULES:
+${normalizedRules}
+
+OUTPUT FORMAT:
+{
+  "schedule": [
+    { "course_id": <NUMBER_FROM_INPUT>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }
+  ]
+}
+`;
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured.' });
@@ -923,7 +945,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: Bearer ,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: 'gpt-3.5-turbo-1106',
@@ -932,7 +954,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
           { role: 'user', content: userQuery },
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.5,
+        temperature: 0.4,
       }),
     });
 
@@ -960,6 +982,15 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       student_group: currentSchedule.id,
     }));
 
+    const returnedCourseIds = new Set(newSections.map((section) => section.course_id));
+    const missingCourses = resolvedSeCourses
+      .map((course) => Number(course.course_id))
+      .filter((id) => !returnedCourseIds.has(id));
+
+    if (missingCourses.length > 0) {
+      throw new Error(`AI schedule missing required courses: ${missingCourses.join(', ')}`);
+    }
+
     res.json({ success: true, schedule: [...fixedSections, ...newSections] });
   } catch (error) {
     console.error('AI Generation Error:', error);
@@ -967,14 +998,16 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   } finally {
     client.release();
   }
-});// Utils
+});
+
+// Utils
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK-V2', timestamp: new Date().toISOString() });
 });
 
 app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
-  res.status(500).json({ error: 'خطأ داخلي في الخادم' });
+  res.status(500).json({ error: 'Ø®Ø·Ø£ Ø¯Ø§Ø®Ù„ÙŠ ÙÙŠ Ø§Ù„Ø®Ø§Ø¯Ù…' });
 });
 
 server.listen(PORT, () => {
@@ -1003,5 +1036,7 @@ const gracefulShutdown = () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
+
+
 
 
