@@ -974,7 +974,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 });
 */
 // ============================================
-// 🔥 AI SCHEDULER ROUTE (With Anti-Delete Safety Net) 🔥
+// 🔥 AI SCHEDULER ROUTE (Smart Logic: Free Slots Strategy) 🔥
 // ============================================
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -1003,43 +1003,69 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: `No courses found for level ${currentLevel}.` });
     }
 
-    // 2. Identify Fixed/Occupied Slots
+    // 2. Identify Occupied Slots (Non-SE)
     const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
     const occupiedMap = {};
     fixedSections.forEach((section) => {
-      occupiedMap[`${section.day_code} ${section.start_time}`] = `${section.course_name} (Fixed)`;
+      // Mark occupied hours. E.g., "S-08", "S-09"
+      const startHour = parseInt(section.start_time.split(':')[0]);
+      const endHour = parseInt(section.end_time.split(':')[0]);
+      for (let h = startHour; h < endHour; h++) {
+        occupiedMap[`${section.day_code}-${h}`] = true;
+      }
     });
 
-    // 3. Current SE Schedule
+    // 3. Calculate FREE Slots (The smart part)
+    const days = ['S', 'M', 'T', 'W', 'H'];
+    const hours = [8, 9, 10, 11, 12, 13, 14]; // 8am to 3pm (15:00)
+    const freeSlots = [];
+
+    days.forEach(day => {
+      hours.forEach(hour => {
+        if (!occupiedMap[`${day}-${hour}`]) {
+          // Format: "Sunday 08:00-09:00"
+          const timeStr = `${String(hour).padStart(2, '0')}:00-${String(hour + 1).padStart(2, '0')}:00`;
+          freeSlots.push({ day, time: timeStr });
+        }
+      });
+    });
+
+    // 4. Current SE Schedule
     const currentSeSections = (currentSchedule.sections || []).filter(s => s.dept_code === 'SE');
     const currentScheduleText = currentSeSections.map(s =>
       `ID:${s.course_id} (${s.course_name}) -> ${s.day_code} ${s.start_time}-${s.end_time}`
     ).join('\n');
 
-    // 4. Required Courses Text
     const requiredCoursesText = resolvedSeCourses
-      .map(c => `ID: ${c.course_id} | Name: ${c.name} | DURATION: ${c.credit} hours`)
+      .map(c => `ID: ${c.course_id} | Name: ${c.name} | TOTAL_HOURS: ${c.credit}`)
       .join('\n');
 
-    // 5. Prompt
+    // 5. Prompt (Force using ONLY free slots)
     const systemInstruction = `
-    You are a strict university scheduler.
+    You are a smart university scheduler.
     
-    RULES:
-    1. **NO DELETIONS:** You MUST schedule EVERY course listed in "REQUIRED COURSES". If you cannot find a perfect slot, schedule it anyway (create a conflict if you must), but DO NOT DELETE IT.
-    2. **NON-SE COURSES:** Avoid "OCCUPIED SLOTS".
-    3. **HOURS:** Duration must match "DURATION" exactly.
-    4. **STABILITY:** Keep courses at their "CURRENT SCHEDULE" time unless the "USER COMMAND" specifically asks to move them.
+    CRITICAL INSTRUCTIONS:
+    1. **USE ONLY FREE SLOTS:** You are provided a list of "AVAILABLE_SLOTS". You MUST ONLY schedule courses in these specific 1-hour blocks. DO NOT invent new times.
+    2. **SPLIT COURSES:** If a course needs 3 hours (TOTAL_HOURS: 3), you MUST find 3 separate "AVAILABLE_SLOTS" for it. They can be consecutive or split across days.
+    3. **NO OVERLAP:** Never schedule two courses in the same slot.
+    4. **STABILITY:** Keep courses at their "CURRENT SCHEDULE" time IF that time is listed in "AVAILABLE_SLOTS".
     5. **OUTPUT:** JSON array only.
     `;
 
     const userQuery = `
     CONTEXT: Level ${currentLevel}
     
-    OCCUPIED SLOTS (Avoid): ${JSON.stringify(occupiedMap)}
-    CURRENT SE SCHEDULE (Preserve if possible): ${currentScheduleText}
-    REQUIRED COURSES (Schedule ALL): ${requiredCoursesText}
+    AVAILABLE_SLOTS (Pick from here ONLY):
+    ${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
+
+    CURRENT SE SCHEDULE (Preserve if valid):
+    ${currentScheduleText}
+
+    REQUIRED COURSES (Schedule ALL hours for each):
+    ${requiredCoursesText}
+
     USER COMMAND: "${user_command || 'Generate optimal schedule'}"
+
     CONSTRAINTS: ${(rules || []).join('; ')}
 
     OUTPUT FORMAT:
@@ -1060,14 +1086,13 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
           { role: "user", content: userQuery }
         ],
         response_format: { type: "json_object" },
-        temperature: 0.2
+        temperature: 0.1 // Very low temp for logic
       })
     });
 
     const result = await response.json();
     let jsonText = result.choices?.[0]?.message?.content || '';
     jsonText = jsonText.replace(/```json|```/g, '').trim();
-
     let generatedData = JSON.parse(jsonText);
     let scheduleArray = generatedData.schedule || generatedData;
 
@@ -1075,34 +1100,18 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       scheduleArray = Object.values(generatedData).find(val => Array.isArray(val)) || [];
     }
 
-    // ========================================================
-    // 🔥 THE SAFETY NET (شبكة الأمان - الإجبارية) 🔥
-    // ========================================================
+    // 7. Safety Net (Same as before)
     const scheduledIds = scheduleArray.map(s => Number(s.course_id));
-
-    // نتحقق: ما هي المواد التي نسيها الذكاء الاصطناعي؟
     const missingCourses = resolvedSeCourses.filter(c => !scheduledIds.includes(c.course_id));
 
     if (missingCourses.length > 0) {
-      console.warn('⚠️ AI dropped courses. Forcing them back into schedule...', missingCourses.map(c => c.name));
-
-      // نقوم بإنشاء جدول "إجباري" للمواد المفقودة
-      // نضعها يوم الأحد (S) الساعة 08:00 صباحاً افتراضياً
       const forcedSections = missingCourses.map(c => ({
         course_id: c.course_id,
-        day: "S", // Sunday
-        start_time: "08:00",
-        // نحسب وقت الانتهاء بناءً على الساعات
-        end_time: `0${8 + (c.credit || 1)}:00`.slice(-5),
-        section_type: "LECTURE",
-        // علامة لنعرف أنها مضافة قسراً
-        is_forced: true
+        day: "S", start_time: "08:00", end_time: `0${8 + (c.credit || 1)}:00`.slice(-5),
+        section_type: "LECTURE", is_forced: true
       }));
-
-      // ندمجها مع الجدول
       scheduleArray = [...scheduleArray, ...forcedSections];
     }
-    // ========================================================
 
     // 8. Merge & Return
     const normalizeDay = (d) => ({ 'SUN': 'S', 'MON': 'M', 'TUE': 'T', 'WED': 'W', 'THU': 'H', 'TH': 'H' }[String(d).toUpperCase()] || String(d).toUpperCase());
@@ -1116,7 +1125,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       course_id: Number(s.course_id)
     }));
 
-    res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "Some courses were forced into the schedule due to AI omission." : null });
+    res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "Some courses were forced." : null });
 
   } catch (error) {
     console.error('AI Error:', error);
@@ -1124,6 +1133,56 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   } finally {
     client.release();
   }
+});
+// ========================================================
+// 🔥 THE SAFETY NET (شبكة الأمان - الإجبارية) 🔥
+// ========================================================
+const scheduledIds = scheduleArray.map(s => Number(s.course_id));
+
+// نتحقق: ما هي المواد التي نسيها الذكاء الاصطناعي؟
+const missingCourses = resolvedSeCourses.filter(c => !scheduledIds.includes(c.course_id));
+
+if (missingCourses.length > 0) {
+  console.warn('⚠️ AI dropped courses. Forcing them back into schedule...', missingCourses.map(c => c.name));
+
+  // نقوم بإنشاء جدول "إجباري" للمواد المفقودة
+  // نضعها يوم الأحد (S) الساعة 08:00 صباحاً افتراضياً
+  const forcedSections = missingCourses.map(c => ({
+    course_id: c.course_id,
+    day: "S", // Sunday
+    start_time: "08:00",
+    // نحسب وقت الانتهاء بناءً على الساعات
+    end_time: `0${8 + (c.credit || 1)}:00`.slice(-5),
+    section_type: "LECTURE",
+    // علامة لنعرف أنها مضافة قسراً
+    is_forced: true
+  }));
+
+  // ندمجها مع الجدول
+  scheduleArray = [...scheduleArray, ...forcedSections];
+}
+// ========================================================
+
+// 8. Merge & Return
+const normalizeDay = (d) => ({ 'SUN': 'S', 'MON': 'M', 'TUE': 'T', 'WED': 'W', 'THU': 'H', 'TH': 'H' }[String(d).toUpperCase()] || String(d).toUpperCase());
+
+const newSections = scheduleArray.map(s => ({
+  ...s,
+  day_code: normalizeDay(s.day || s.day_code),
+  dept_code: 'SE',
+  is_ai_generated: true,
+  student_group: currentSchedule.id,
+  course_id: Number(s.course_id)
+}));
+
+res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "Some courses were forced into the schedule due to AI omission." : null });
+
+  } catch (error) {
+  console.error('AI Error:', error);
+  res.status(500).json({ error: 'Failed to generate schedule. AI Error.' });
+} finally {
+  client.release();
+}
 });
 
 // ============================================
