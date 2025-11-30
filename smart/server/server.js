@@ -974,7 +974,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 });
 */
 // ============================================
-// 🔥 AI SCHEDULER ROUTE (Smart Logic: Free Slots + Safety Net) 🔥
+// 🔥 AI SCHEDULER ROUTE (Smart Constraints + User Command Priority) 🔥
 // ============================================
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -999,11 +999,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       resolvedSeCourses = coursesResult.rows;
     }
 
-    if (!resolvedSeCourses || resolvedSeCourses.length === 0) {
-      return res.status(404).json({ error: `No courses found for level ${currentLevel}.` });
-    }
-
-    // 2. Identify Occupied Slots (Non-SE)
+    // 2. Identify Occupied Slots
     const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
     const occupiedMap = {};
     fixedSections.forEach((section) => {
@@ -1014,22 +1010,29 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       }
     });
 
-    // 3. Calculate FREE Slots (The smart part)
+    // 3. Calculate FREE Slots (With Rule Filtering)
     const days = ['S', 'M', 'T', 'W', 'H'];
-    const hours = [8, 9, 10, 11, 12, 13, 14]; // 8am to 3pm
+    const hours = [8, 9, 10, 11, 12, 13, 14];
     const freeSlots = [];
+
+    // 🛑 فلترة القواعد المعروفة برمجياً (مثل وقت الغداء)
+    // نفترض أن القواعد تأتي كنصوص، نبحث عن كلمات مفتاحية
+    const rulesText = (rules || []).join(' ').toLowerCase();
+    const avoidLunch = rulesText.includes('12') || rulesText.includes('break') || rulesText.includes('1-12') || rulesText.includes('12-1');
 
     days.forEach(day => {
       hours.forEach(hour => {
+        // إذا كانت القاعدة تقول ممنوع من 12 لـ 1، نحذف الساعة 12 من الخيارات
+        if (avoidLunch && hour === 12) return;
+
         if (!occupiedMap[`${day}-${hour}`]) {
-          // Format: "Sunday 08:00-09:00"
           const timeStr = `${String(hour).padStart(2, '0')}:00-${String(hour + 1).padStart(2, '0')}:00`;
           freeSlots.push({ day, time: timeStr });
         }
       });
     });
 
-    // 4. Current SE Schedule
+    // 4. Prepare Context
     const currentSeSections = (currentSchedule.sections || []).filter(s => s.dept_code === 'SE');
     const currentScheduleText = currentSeSections.map(s =>
       `ID:${s.course_id} (${s.course_name}) -> ${s.day_code} ${s.start_time}-${s.end_time}`
@@ -1039,31 +1042,33 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       .map(c => `ID: ${c.course_id} | Name: ${c.name} | TOTAL_HOURS: ${c.credit}`)
       .join('\n');
 
-    // 5. Prompt (Force using ONLY free slots)
+    // 5. Prompt (Prioritize User Command)
     const systemInstruction = `
     You are a smart university scheduler.
     
-    CRITICAL INSTRUCTIONS:
-    1. **USE ONLY FREE SLOTS:** You are provided a list of "AVAILABLE_SLOTS". You MUST ONLY schedule courses in these specific 1-hour blocks. DO NOT invent new times.
-    2. **SPLIT COURSES:** If a course needs 3 hours (TOTAL_HOURS: 3), you MUST find 3 separate "AVAILABLE_SLOTS" for it. They can be consecutive or split across days.
-    3. **NO OVERLAP:** Never schedule two courses in the same slot.
-    4. **STABILITY:** Keep courses at their "CURRENT SCHEDULE" time IF that time is listed in "AVAILABLE_SLOTS".
+    PRIORITY ORDER:
+    1. **USER COMMAND:** Execute the user's request FIRST (e.g., "Move Course X to Thursday"). This overrides "Stability".
+    2. **RULES:** - Use ONLY the provided "AVAILABLE_SLOTS". 
+       - If "AVAILABLE_SLOTS" does not include 12:00-13:00, DO NOT USE IT.
+    3. **REQUIRED COURSES:** Schedule ALL courses. Split them if needed to fit into available slots.
+    4. **STABILITY:** For courses NOT changed by the user command, try to keep their "CURRENT SCHEDULE" time IF it is valid.
     5. **OUTPUT:** JSON array only.
     `;
 
     const userQuery = `
     CONTEXT: Level ${currentLevel}
-    AVAILABLE_SLOTS (Pick from here ONLY):
+    
+    AVAILABLE_SLOTS (These are the ONLY valid times. Do NOT invent others):
     ${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
 
-    CURRENT SE SCHEDULE (Preserve if valid):
-    ${currentScheduleText}
-
-    REQUIRED COURSES (Schedule ALL hours for each):
+    REQUIRED COURSES:
     ${requiredCoursesText}
 
-    USER COMMAND: "${user_command || 'Generate optimal schedule'}"
-    CONSTRAINTS: ${(rules || []).join('; ')}
+    CURRENT SCHEDULE (Reference):
+    ${currentScheduleText}
+
+    USER COMMAND (HIGHEST PRIORITY - Apply this change first!): 
+    "${user_command || 'Generate optimal schedule'}"
 
     OUTPUT FORMAT:
     { "schedule": [{ "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }] }
@@ -1083,49 +1088,34 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
           { role: "user", content: userQuery }
         ],
         response_format: { type: "json_object" },
-        temperature: 0.1 // Very low temp for logic
+        temperature: 0.2
       })
     });
 
     const result = await response.json();
     let jsonText = result.choices?.[0]?.message?.content || '';
     jsonText = jsonText.replace(/```json|```/g, '').trim();
-
     let generatedData = JSON.parse(jsonText);
     let scheduleArray = generatedData.schedule || generatedData;
 
-    if (!Array.isArray(scheduleArray)) {
-      scheduleArray = Object.values(generatedData).find(val => Array.isArray(val)) || [];
-    }
+    if (!Array.isArray(scheduleArray)) scheduleArray = Object.values(generatedData).find(val => Array.isArray(val)) || [];
 
-    // ========================================================
-    // 🔥 THE SAFETY NET (شبكة الأمان - الإجبارية) 🔥
-    // ========================================================
+    // 7. Safety Net
     const scheduledIds = scheduleArray.map(s => Number(s.course_id));
-
-    // نتحقق: ما هي المواد التي نسيها الذكاء الاصطناعي؟
     const missingCourses = resolvedSeCourses.filter(c => !scheduledIds.includes(c.course_id));
 
     if (missingCourses.length > 0) {
-      console.warn('⚠️ AI dropped courses. Forcing them back into schedule...', missingCourses.map(c => c.name));
-
-      // نقوم بإنشاء جدول "إجباري" للمواد المفقودة
-      // نضعها يوم الأحد (S) الساعة 08:00 صباحاً افتراضياً
+      // نحاول نجد أي فراغ متاح أولاً
+      const fallbackSlot = freeSlots.length > 0 ? freeSlots[0] : { day: "S", time: "08:00-09:00" };
       const forcedSections = missingCourses.map(c => ({
         course_id: c.course_id,
-        day: "S", // Sunday
-        start_time: "08:00",
-        // نحسب وقت الانتهاء بناءً على الساعات
-        end_time: `0${8 + (c.credit || 1)}:00`.slice(-5),
-        section_type: "LECTURE",
-        // علامة لنعرف أنها مضافة قسراً
-        is_forced: true
+        day: fallbackSlot.day,
+        start_time: fallbackSlot.time.split('-')[0],
+        end_time: `0${parseInt(fallbackSlot.time.split('-')[0]) + (c.credit || 1)}:00`.slice(-5),
+        section_type: "LECTURE", is_forced: true
       }));
-
-      // ندمجها مع الجدول
       scheduleArray = [...scheduleArray, ...forcedSections];
     }
-    // ========================================================
 
     // 8. Merge & Return
     const normalizeDay = (d) => ({ 'SUN': 'S', 'MON': 'M', 'TUE': 'T', 'WED': 'W', 'THU': 'H', 'TH': 'H' }[String(d).toUpperCase()] || String(d).toUpperCase());
@@ -1139,7 +1129,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       course_id: Number(s.course_id)
     }));
 
-    res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "Some courses were forced due to AI omission." : null });
+    res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "AI missed some courses." : null });
 
   } catch (error) {
     console.error('AI Error:', error);
