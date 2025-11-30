@@ -855,7 +855,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'currentLevel and current schedule sections are required.' });
     }
 
-    let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length > 0 ? seCourses : null;
+    let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length ? seCourses : null;
     if (!resolvedSeCourses) {
       const coursesResult = await client.query(
         SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
@@ -877,7 +877,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       const dayCode = section.day_code || section.day || 'S';
       const start = section.start_time?.substring(0, 5) || '08:00';
       const end = section.end_time?.substring(0, 5) || '09:00';
-      occupiedSlots[${dayCode} 33430-41569] = ${section.course_name || section.dept_code};
+      occupiedSlots[${dayCode} 33430-44206] = ${section.course_name || section.dept_code};
     });
 
     const requiredCoursesText = resolvedSeCourses
@@ -885,35 +885,35 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       .join('\n');
 
     const systemInstruction = 
-    You are a strict university scheduler. 
-    Your ONLY task is to assign times for the provided courses.
+      You are a strict university scheduler.
+      Your ONLY task is to assign times for the provided courses.
 
-    CRITICAL RULES:
-    1. **ID INTEGRITY:** You MUST use the exact 'ID' provided in the 'REQUIRED COURSES' list for the 'course_id' field.
-    2. **Schedule All:** You must schedule EVERY course listed.
-    3. **Conflicts:** Do not schedule in 'Occupied Slots'.
-    4. **Format:** Return a JSON Object with a key "schedule" containing the array.
+      CRITICAL RULES:
+      1. **ID INTEGRITY:** You MUST use the exact 'ID' provided in the 'REQUIRED COURSES' list for the 'course_id' field.
+      2. **Schedule All:** You must schedule EVERY course listed.
+      3. **Conflicts:** Do not schedule in 'Occupied Slots'.
+      4. **Format:** Return a JSON Object with a key "schedule" containing the array.
     ;
 
     const userQuery = 
-    CONTEXT:
-    - Level: 
+      CONTEXT:
+      - Level: 
 
-    REQUIRED COURSES (Use these IDs exactly):
-    
+      REQUIRED COURSES (Use these IDs exactly):
+      
 
-    OCCUPIED SLOTS (Forbidden times):
-    
+      OCCUPIED SLOTS (Forbidden times):
+      
 
-    USER COMMAND:
-    ""
+      USER COMMAND:
+      ""
 
-    OUTPUT FORMAT:
-    {
-      "schedule": [
-        { "course_id": <NUMBER_FROM_INPUT>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }
-      ]
-    }
+      OUTPUT FORMAT:
+      {
+        "schedule": [
+          { "course_id": <NUMBER_FROM_INPUT>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }
+        ]
+      }
     ;
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -967,168 +967,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   } finally {
     client.release();
   }
-});app.get('/api/rules', async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const query = 'SELECT rule_id, text FROM rules ORDER BY rule_id';
-    const result = await client.query(query);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch rules.' });
-  } finally {
-    client.release();
-  }
-});
-
-app.post('/api/rules', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { text } = req.body;
-    const query = 'INSERT INTO rules (text) VALUES ($1) RETURNING *';
-    const result = await client.query(query, [text]);
-    res.json({ success: true, rule: result.rows[0] });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to add rule.' });
-  } finally {
-    client.release();
-  }
-});
-
-app.delete('/api/rules/:ruleId', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { ruleId } = req.params;
-    const query = 'DELETE FROM rules WHERE rule_id = $1';
-    await client.query(query, [ruleId]);
-    res.json({ success: true, message: 'Rule deleted.' });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to delete rule.' });
-  } finally {
-    client.release();
-  }
-});
-
-app.post('/api/comments', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { student_id, schedule_version_id, comment } = req.body;
-    const insertQuery = `INSERT INTO comments (student_id, schedule_version_id, comment) VALUES ($1, $2, $3) RETURNING *;`;
-    const result = await client.query(insertQuery, [student_id, schedule_version_id, comment]);
-    res.status(201).json({ success: true, message: 'Comment added successfully.', comment: result.rows[0] });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to add comment. Check server logs for details.' });
-  } finally {
-    client.release();
-  }
-});
-
-app.get('/api/comments/all', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const query = `
-          SELECT c.id as comment_id, c.comment, c.created_at, s.student_id, s.level as student_level, u.name as student_name, sv.id as schedule_version_id, sv.version_comment
-          FROM comments c
-          LEFT JOIN students s ON c.student_id = s.student_id
-          LEFT JOIN users u ON s.user_id = u.user_id
-          LEFT JOIN schedule_versions sv ON c.schedule_version_id = sv.id
-          WHERE c.user_id IS NULL 
-          ORDER BY c.created_at DESC;
-        `;
-    const result = await client.query(query);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch all comments.' });
-  } finally {
-    client.release();
-  }
-});
-
-app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { schedule_version_id } = req.params;
-    const query = `
-      SELECT c.id, c.comment, c.created_at, u.name AS student_name
-      FROM comments c
-      JOIN students s ON c.student_id = s.student_id
-      JOIN users u ON s.user_id = u.user_id
-      WHERE c.schedule_version_id = $1 AND c.user_id IS NULL 
-      ORDER BY c.created_at DESC
-    `;
-    const result = await client.query(query, [schedule_version_id]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch comments.' });
-  } finally {
-    client.release();
-  }
-});
-
-// Faculty Comments
-app.get('/api/schedule-versions/approved', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { level } = req.query || {};
-    let sql = 'SELECT * FROM schedule_versions WHERE committee_approved = true';
-    const params = [];
-    if (level) { params.push(level); sql += ' AND level = $1'; }
-    sql += ' ORDER BY created_at DESC';
-    const result = await client.query(sql, params);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch approved schedule versions.' });
-  } finally {
-    client.release();
-  }
-});
-
-app.get('/api/schedule-versions/:id/faculty-comments', authenticateToken, requireCommitteeRole, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { id } = req.params;
-    const sql = `SELECT c.id, c.comment, c.created_at, u.user_id, u.name AS faculty_name, u.email AS faculty_email FROM comments c JOIN users u ON c.user_id = u.user_id WHERE c.schedule_version_id = $1 AND c.user_id IS NOT NULL ORDER BY c.created_at DESC`;
-    const result = await client.query(sql, [id]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch faculty comments.' });
-  } finally {
-    client.release();
-  }
-});
-
-app.post('/api/schedule-versions/:id/faculty-comments', authenticateToken, requireFaculty, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { id } = req.params;
-    const { comment } = req.body || {};
-    if (!comment || !String(comment).trim()) return res.status(400).json({ message: 'Comment is required.' });
-    const userId = req.user?.id;
-    const insert = `INSERT INTO comments (schedule_version_id, user_id, comment) VALUES ($1, $2, $3) RETURNING id, schedule_version_id, user_id, comment, created_at`;
-    const result = await client.query(insert, [id, userId, String(comment).trim()]);
-    res.status(201).json({ success: true, comment: result.rows[0] });
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to create faculty comment.' });
-  } finally {
-    client.release();
-  }
-});
-
-app.get('/api/schedule-versions/:id/my-faculty-comments', authenticateToken, requireFaculty, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { id } = req.params;
-    const userId = req.user?.id;
-    const sql = `SELECT c.id, c.comment, c.created_at FROM comments c WHERE c.schedule_version_id = $1 AND c.user_id = $2 ORDER BY c.created_at DESC`;
-    const result = await client.query(sql, [id, userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch my faculty comments.' });
-  } finally {
-    client.release();
-  }
-});
-
-// Utils
+});// Utils
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK-V2', timestamp: new Date().toISOString() });
 });
@@ -1164,4 +1003,5 @@ const gracefulShutdown = () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
+
 
