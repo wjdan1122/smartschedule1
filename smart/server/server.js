@@ -974,7 +974,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 });
 */
 // ============================================
-// 🔥 AI SCHEDULER ROUTE (Smart Constraints + User Command Priority) 🔥
+// 🔥 AI SCHEDULER ROUTE (Dynamic Rules Logic) 🔥
 // ============================================
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -999,7 +999,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       resolvedSeCourses = coursesResult.rows;
     }
 
-    // 2. Identify Occupied Slots
+    // 2. Identify Occupied Slots (University Fixed Courses)
     const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
     const occupiedMap = {};
     fixedSections.forEach((section) => {
@@ -1010,21 +1010,14 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       }
     });
 
-    // 3. Calculate FREE Slots (With Rule Filtering)
+    // 3. Calculate All Physically Free Slots
+    // (هنا لن نحذف أي ساعة برمجياً، سنترك الخيار للذكاء الاصطناعي بناءً على الرولز)
     const days = ['S', 'M', 'T', 'W', 'H'];
     const hours = [8, 9, 10, 11, 12, 13, 14];
     const freeSlots = [];
 
-    // 🛑 فلترة القواعد المعروفة برمجياً (مثل وقت الغداء)
-    // نفترض أن القواعد تأتي كنصوص، نبحث عن كلمات مفتاحية
-    const rulesText = (rules || []).join(' ').toLowerCase();
-    const avoidLunch = rulesText.includes('12') || rulesText.includes('break') || rulesText.includes('1-12') || rulesText.includes('12-1');
-
     days.forEach(day => {
       hours.forEach(hour => {
-        // إذا كانت القاعدة تقول ممنوع من 12 لـ 1، نحذف الساعة 12 من الخيارات
-        if (avoidLunch && hour === 12) return;
-
         if (!occupiedMap[`${day}-${hour}`]) {
           const timeStr = `${String(hour).padStart(2, '0')}:00-${String(hour + 1).padStart(2, '0')}:00`;
           freeSlots.push({ day, time: timeStr });
@@ -1032,42 +1025,54 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       });
     });
 
-    // 4. Prepare Context
+    // 4. Prepare Text Context
     const currentSeSections = (currentSchedule.sections || []).filter(s => s.dept_code === 'SE');
     const currentScheduleText = currentSeSections.map(s =>
       `ID:${s.course_id} (${s.course_name}) -> ${s.day_code} ${s.start_time}-${s.end_time}`
     ).join('\n');
 
     const requiredCoursesText = resolvedSeCourses
-      .map(c => `ID: ${c.course_id} | Name: ${c.name} | TOTAL_HOURS: ${c.credit}`)
+      .map(c => `ID: ${c.course_id} | Name: ${c.name} | HOURS_NEEDED: ${c.credit}`)
       .join('\n');
 
-    // 5. Prompt (Prioritize User Command)
+    // تنسيق القواعد لتكون واضحة جداً
+    const formattedRules = (rules || []).map(r => `- ${r}`).join('\n');
+
+    // 5. The "Dynamic" Prompt
     const systemInstruction = `
-    You are a smart university scheduler.
+    You are an intelligent university scheduler.
     
-    PRIORITY ORDER:
-    1. **USER COMMAND:** Execute the user's request FIRST (e.g., "Move Course X to Thursday"). This overrides "Stability".
-    2. **RULES:** - Use ONLY the provided "AVAILABLE_SLOTS". 
-       - If "AVAILABLE_SLOTS" does not include 12:00-13:00, DO NOT USE IT.
-    3. **REQUIRED COURSES:** Schedule ALL courses. Split them if needed to fit into available slots.
-    4. **STABILITY:** For courses NOT changed by the user command, try to keep their "CURRENT SCHEDULE" time IF it is valid.
-    5. **OUTPUT:** JSON array only.
+    YOUR PRIORITY LIST (Follow in order):
+    1. **USER COMMAND:** This is the most important instruction.
+    2. **CUSTOM RULES:** You MUST read the "CUSTOM RULES" section below. 
+       - If a rule says "No classes at 12", you MUST NOT schedule anything at 12:00, even if the slot is free.
+       - If a rule says "No classes on Thursday", do not use 'H' day.
+    3. **OFFICIAL CONSTRAINTS:** Do not overlap with "OCCUPIED SLOTS".
+    4. **CREDIT HOURS:** If a course needs 2 hours, give it 2 slots (consecutive preferred).
+    5. **STABILITY:** Keep existing courses in their place unless forced to move.
+    
+    OUTPUT: Return a valid JSON object with a "schedule" array.
     `;
 
     const userQuery = `
     CONTEXT: Level ${currentLevel}
     
-    AVAILABLE_SLOTS (These are the ONLY valid times. Do NOT invent others):
-    ${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
+    CUSTOM RULES (STRICTLY FOLLOW THESE):
+    ${formattedRules || "No custom rules."}
 
-    REQUIRED COURSES:
-    ${requiredCoursesText}
+    OCCUPIED SLOTS (Physically taken by other depts):
+    ${JSON.stringify(occupiedMap)}
+
+    ALL PHYSICALLY FREE SLOTS (You can use these ONLY IF they don't violate CUSTOM RULES):
+    ${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
 
     CURRENT SCHEDULE (Reference):
     ${currentScheduleText}
 
-    USER COMMAND (HIGHEST PRIORITY - Apply this change first!): 
+    REQUIRED COURSES (Schedule ALL):
+    ${requiredCoursesText}
+
+    USER COMMAND: 
     "${user_command || 'Generate optimal schedule'}"
 
     OUTPUT FORMAT:
@@ -1105,7 +1110,6 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     const missingCourses = resolvedSeCourses.filter(c => !scheduledIds.includes(c.course_id));
 
     if (missingCourses.length > 0) {
-      // نحاول نجد أي فراغ متاح أولاً
       const fallbackSlot = freeSlots.length > 0 ? freeSlots[0] : { day: "S", time: "08:00-09:00" };
       const forcedSections = missingCourses.map(c => ({
         course_id: c.course_id,
@@ -1137,7 +1141,6 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   } finally {
     client.release();
   }
-
 });
 // ============================================
 // RULES & COMMENTS ROUTES
