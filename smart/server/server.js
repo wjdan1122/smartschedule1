@@ -850,49 +850,95 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { level, currentLevel, currentSchedule, user_command } = req.body;
-    
-    // Basic data gathering (Same as before)
-    const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
-    const rules = rulesResult.rows.map(r => r.text);
-    const coursesResult = await client.query(
-      `SELECT c.course_id, c.name, c.credit, c.dept_code 
-       FROM courses c
-       LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
-       WHERE (c.level = $1 AND c.dept_code = 'SE') OR (aebl.level = $1)`,
-      [currentLevel]
-    );
-    const requiredCourses = coursesResult.rows;
-    if (requiredCourses.length === 0) {
-      return res.status(404).json({ error: `No Software Engineering courses found for level ${currentLevel}.` });
+    const { level, currentLevel, currentSchedule, user_command, seCourses, rules } = req.body || {};
+    const effectiveLevel = currentLevel || level;
+    if (!effectiveLevel || !currentSchedule || !Array.isArray(currentSchedule.sections)) {
+      return res.status(400).json({ error: 'currentLevel and current schedule sections are required.' });
     }
-    const fixedSections = currentSchedule.sections.filter(sec => sec.dept_code !== 'SE');
-    const occupiedSlots = fixedSections.map(sec =>
-      `${sec.day_code} from ${sec.start_time?.substring(0, 5)} to ${sec.end_time?.substring(0, 5)} for ${sec.dept_code}`
+
+    let resolvedRules = Array.isArray(rules) && rules.length ? rules : null;
+    if (!resolvedRules) {
+      const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
+      resolvedRules = rulesResult.rows.map(r => r.text);
+    }
+
+    let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length ? seCourses : null;
+    if (!resolvedSeCourses) {
+      const coursesResult = await client.query(
+        `SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
+         FROM courses c
+         LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
+         WHERE (c.level = $1 AND c.dept_code = 'SE')
+            OR (aebl.level = $1)`,
+        [effectiveLevel]
+      );
+      resolvedSeCourses = coursesResult.rows;
+    }
+
+    if (!resolvedSeCourses || resolvedSeCourses.length === 0) {
+      return res.status(404).json({ error: `No Software Engineering courses found for level ${effectiveLevel}.` });
+    }
+
+    const fixedSections = (currentSchedule.sections || []).filter(
+      sec => String(sec.dept_code || '').toUpperCase() !== 'SE'
     );
+    const occupiedMap = {};
+    fixedSections.forEach(sec => {
+      const dayCode = sec.day_code || sec.day || '';
+      const start = sec.start_time?.substring(0, 5) || '08:00';
+      const end = sec.end_time?.substring(0, 5) || '09:00';
+      occupiedMap[`${dayCode} ${start}-${end}`] = `${sec.dept_code} ${sec.course_name || ''}`.trim();
+    });
 
-    // Prepare prompt parts (Modified for clarity with OpenAI)
-    const systemInstruction = `You are a university academic scheduler AI. Your task is to schedule the provided list of Software Engineering (SE) courses into available slots, following all rules strictly. You MUST treat the 'occupied slots' list as fixed and unmovable. Your final output MUST be a JSON array ONLY.`;
+    const currentSeSections = (currentSchedule.sections || []).filter(
+      sec => String(sec.dept_code || '').toUpperCase() === 'SE'
+    );
+    const currentScheduleSummary = currentSeSections
+      .map(sec => {
+        const dayCode = sec.day_code || sec.day || '';
+        const start = sec.start_time?.substring(0, 5) || '08:00';
+        const end = sec.end_time?.substring(0, 5) || '09:00';
+        return `- ${sec.course_name || `Course ${sec.course_id}`}: ${dayCode} ${start}-${end}`;
+      })
+      .join('\n');
+
+    const requiredSeCourses = resolvedSeCourses
+      .map(course => `${course.name} (${course.credit} ${course.credit === 1 ? 'hour' : 'hours'}${course.is_elective ? ', elective' : ''})`)
+      .join(', ');
+
+    const systemInstruction = `
+You are an expert university academic scheduler. 
+Your goal is to modify or generate a schedule for Level ${effectiveLevel} Software Engineering students.
+
+CRITICAL RULES:
+1. **Official Constraints:** You MUST NOT schedule anything in the "Occupied Slots" (these are non-SE courses fixed by the university).
+2. **Required Courses:** You MUST schedule ALL courses listed in "Required Courses". Do not omit any course.
+3. **Electives:** If "Required Courses" includes electives, they MUST appear in the final schedule.
+4. **User Command:** Apply the user's specific change (e.g., "Change time for 314").
+5. **Stability:** For courses NOT mentioned in the user's command, try to keep their timing similar to the "Current SE Schedule" when possible, unless resolving a conflict.
+6. **Output:** Return JSON ONLY without commentary.`;
+
     const userQuery = `
-      Objective: Generate a weekly schedule for Level ${currentLevel} students.
-      Rules:
-      1. Each course's total scheduled hours must equal its credit value.
-      2. Prefer multiple shorter blocks (1-2 hours). Avoid 3-hour blocks unless necessary.
-      3. Spread sessions across different days.
-      4. Start/End times between 08:00 and 15:00.
-      5. No overlap with occupied slots.
-      6. Use valid days: S, M, T, W, H.
-      7. Output valid JSON array ONLY. Do not include any text before or after the JSON array.
+CONTEXT:
+- Level: ${effectiveLevel}
+- Current SE Schedule (preserve unless conflicts arise):
+${currentScheduleSummary || 'None (new schedule)'}
 
-      Required SE Courses: ${JSON.stringify(requiredCourses.map(c => ({ course_id: c.course_id, name: c.name, credit: c.credit, section_type: 'LECTURE' })))}
-      Occupied Slots: ${JSON.stringify(occupiedSlots)}
-      Constraints: ${JSON.stringify(rules)}
-      User Adjustment: ${user_command}
-      
-      Output Format: JSON Array of objects: [{ "course_id": number, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }]
-      
-      **STRICTLY AND ONLY OUTPUT THE JSON ARRAY. DO NOT INCLUDE ANY MARKDOWN TAGS (e.g., \`\`\`json), NO EXPLANATION, AND NO INTRODUCTORY TEXT. START WITH [ AND END WITH ].**
-    `;
+REQUIRED COURSES (Must be included):
+${requiredSeCourses}
+
+OCCUPIED SLOTS (Strictly forbidden):
+${JSON.stringify(occupiedMap)}
+
+USER COMMAND (Apply this change):
+"${user_command || 'Generate the optimal schedule'}"
+
+CONSTRAINTS:
+${resolvedRules.join('; ')}
+
+OUTPUT FORMAT:
+JSON Array of objects: [{ "course_id": number, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }]
+`;
 
     // 🛑 تطبيق التحول إلى OpenAI
     const apiKey = process.env.OPENAI_API_KEY; // ⬅️ يستخدم مفتاح OpenAI
