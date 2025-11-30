@@ -850,197 +850,124 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { level, currentLevel, currentSchedule, user_command, seCourses, rules } = req.body || {};
-    const effectiveLevel = currentLevel || level;
-    if (!effectiveLevel || !currentSchedule || !Array.isArray(currentSchedule.sections)) {
+    const { currentLevel, currentSchedule, seCourses, user_command } = req.body || {};
+    if (!currentLevel || !currentSchedule || !Array.isArray(currentSchedule.sections)) {
       return res.status(400).json({ error: 'currentLevel and current schedule sections are required.' });
     }
 
-    let resolvedRules = Array.isArray(rules) && rules.length ? rules : null;
-    if (!resolvedRules) {
-      const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
-      resolvedRules = rulesResult.rows.map(r => r.text);
-    }
-
-    let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length ? seCourses : null;
+    let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length > 0 ? seCourses : null;
     if (!resolvedSeCourses) {
       const coursesResult = await client.query(
-        `SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
+        SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
          FROM courses c
          LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
-         WHERE (c.level = $1 AND c.dept_code = 'SE')
-            OR (aebl.level = $1)`,
-        [effectiveLevel]
+         WHERE (c.level =  AND c.dept_code = 'SE')
+            OR (aebl.level = ),
+        [currentLevel]
       );
       resolvedSeCourses = coursesResult.rows;
     }
-
     if (!resolvedSeCourses || resolvedSeCourses.length === 0) {
-      return res.status(404).json({ error: `No Software Engineering courses found for level ${effectiveLevel}.` });
+      return res.status(404).json({ error: No Software Engineering courses found for level . });
     }
 
-    const fixedSections = (currentSchedule.sections || []).filter(
-      sec => String(sec.dept_code || '').toUpperCase() !== 'SE'
-    );
-    const occupiedMap = {};
-    fixedSections.forEach(sec => {
-      const dayCode = sec.day_code || sec.day || '';
-      const start = sec.start_time?.substring(0, 5) || '08:00';
-      const end = sec.end_time?.substring(0, 5) || '09:00';
-      occupiedMap[`${dayCode} ${start}-${end}`] = `${sec.dept_code} ${sec.course_name || ''}`.trim();
+    const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
+    const occupiedSlots = {};
+    fixedSections.forEach((section) => {
+      const dayCode = section.day_code || section.day || 'S';
+      const start = section.start_time?.substring(0, 5) || '08:00';
+      const end = section.end_time?.substring(0, 5) || '09:00';
+      occupiedSlots[${dayCode} 33430-41569] = ${section.course_name || section.dept_code};
     });
 
-    const currentSeSections = (currentSchedule.sections || []).filter(
-      sec => String(sec.dept_code || '').toUpperCase() === 'SE'
-    );
-    const currentScheduleSummary = currentSeSections
-      .map(sec => {
-        const dayCode = sec.day_code || sec.day || '';
-        const start = sec.start_time?.substring(0, 5) || '08:00';
-        const end = sec.end_time?.substring(0, 5) || '09:00';
-        return `- ${sec.course_name || `Course ${sec.course_id}`}: ${dayCode} ${start}-${end}`;
-      })
+    const requiredCoursesText = resolvedSeCourses
+      .map((course) => ID:  | Name:  | Credit:  hrs)
       .join('\n');
 
-    const requiredSeCourses = resolvedSeCourses
-      .map(course => `${course.name} (${course.credit} ${course.credit === 1 ? 'hour' : 'hours'}${course.is_elective ? ', elective' : ''})`)
-      .join(', ');
-    const requiredCourseIds = new Set(
-      resolvedSeCourses.map(course => Number(course.course_id) || course.course_id)
-    );
+    const systemInstruction = 
+    You are a strict university scheduler. 
+    Your ONLY task is to assign times for the provided courses.
 
-    const systemInstruction = `
-You are an expert university academic scheduler. 
-Your goal is to modify or generate a schedule for Level ${effectiveLevel} Software Engineering students.
+    CRITICAL RULES:
+    1. **ID INTEGRITY:** You MUST use the exact 'ID' provided in the 'REQUIRED COURSES' list for the 'course_id' field.
+    2. **Schedule All:** You must schedule EVERY course listed.
+    3. **Conflicts:** Do not schedule in 'Occupied Slots'.
+    4. **Format:** Return a JSON Object with a key "schedule" containing the array.
+    ;
 
-CRITICAL RULES:
-1. **Official Constraints:** You MUST NOT schedule anything in the "Occupied Slots" (these are non-SE courses fixed by the university).
-2. **Required Courses:** You MUST schedule ALL courses listed in "Required Courses". Do not omit any course.
-3. **Electives:** If "Required Courses" includes electives, they MUST appear in the final schedule.
-4. **User Command:** Apply the user's specific change (e.g., "Change time for 314").
-5. **Stability:** For courses NOT mentioned in the user's command, try to keep their timing similar to the "Current SE Schedule" when possible, unless resolving a conflict.
-6. **Output:** Return JSON ONLY without commentary.`;
+    const userQuery = 
+    CONTEXT:
+    - Level: 
 
-    const userQuery = `
-CONTEXT:
-- Level: ${effectiveLevel}
-- Current SE Schedule (preserve unless conflicts arise):
-${currentScheduleSummary || 'None (new schedule)'}
-
-REQUIRED COURSES (Must be included):
-${requiredSeCourses}
-
-OCCUPIED SLOTS (Strictly forbidden):
-${JSON.stringify(occupiedMap)}
-
-USER COMMAND (Apply this change):
-"${user_command || 'Generate the optimal schedule'}"
-
-CONSTRAINTS:
-${resolvedRules.join('; ')}
-
-OUTPUT FORMAT:
-JSON Array of objects: [{ "course_id": number, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }]
-`;
-
-    // 🛑 تطبيق التحول إلى OpenAI
-    const apiKey = process.env.OPENAI_API_KEY; // ⬅️ يستخدم مفتاح OpenAI
-    if (!apiKey) {
-      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured.' });
-    }
-
-    const apiUrl = 'https://api.openai.com/v1/chat/completions'; // ⬅️ نقطة نهاية OpenAI
+    REQUIRED COURSES (Use these IDs exactly):
     
-    // 💡 ملاحظة: تم إزالة json_schema الذي تسبب في خطأ "Unknown parameter"
-    const payload = {
-      model: 'gpt-3.5-turbo-1106', // نموذج سريع وفعال يمكنه إخراج JSON
-      messages: [
-        { role: "system", content: systemInstruction },
-        { role: "user", content: userQuery }
-      ],
-      // 💡 التصحيح: استخدام النوع الأساسي فقط
-      response_format: { 
-          type: "json_object" 
-      }, 
-      temperature: 0.7 
-    };
 
-    const response = await fetch(apiUrl, {
+    OCCUPIED SLOTS (Forbidden times):
+    
+
+    USER COMMAND:
+    ""
+
+    OUTPUT FORMAT:
+    {
+      "schedule": [
+        { "course_id": <NUMBER_FROM_INPUT>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }
+      ]
+    }
+    ;
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured.' });
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}` // طريقة المصادقة لـ OpenAI
+        Authorization: Bearer ,
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo-1106',
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: userQuery },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.5,
+      }),
     });
 
     const result = await response.json();
-    
-    // معالجة استجابة OpenAI
-    const message = result?.choices?.[0]?.message || {};
-    if (!result.choices || result.choices.length === 0 || !message.content) {
-        console.error('AI Response Error:', JSON.stringify(result, null, 2));
-        const aiError = result.error?.message || 'AI did not return a valid response. Check OpenAI quota/key.';
-        throw new Error(aiError); 
+    const content = result.choices?.[0]?.message?.content;
+    if (!content) throw new Error('AI returned empty response.');
+
+    const generatedData = JSON.parse(content);
+    let scheduleArray = generatedData.schedule || generatedData;
+    if (!Array.isArray(scheduleArray)) {
+      scheduleArray = Object.values(generatedData).find((val) => Array.isArray(val)) || [];
     }
 
-    let jsonText = message.content || ''; 
-    
-    try {
-      // 💡 التصحيح: تنظيف النص من علامات الـ Markdown والفراغات
-      jsonText = jsonText.trim().replace(/```json|```/g, '').trim(); 
-      
-      let generatedSeSchedule = JSON.parse(jsonText);
-      
-      // 💡 التصحيح: التأكد من أن generatedSeSchedule هي مصفوفة (Array) لحل مشكلة map is not a function
-      if (!Array.isArray(generatedSeSchedule)) {
-        generatedSeSchedule = [generatedSeSchedule];
-        console.log('✅ AI output wrapped in Array to allow mapping.'); 
-      }
+    const normalizeDay = (value) => {
+      const map = { SUN: 'S', MON: 'M', TUE: 'T', WED: 'W', THU: 'H', TH: 'H', S: 'S', M: 'M', T: 'T', W: 'W', H: 'H' };
+      return map[String(value || '').toUpperCase()] || 'S';
+    };
 
-      const coveredCourses = new Set();
-      const correctedSeSchedule = generatedSeSchedule.map(section => {
-        const courseId = Number(section.course_id) || section.course_id;
-        coveredCourses.add(courseId);
-        return {
-          ...section,
-          course_id: courseId,
-          day_code: section.day, 
-          is_ai_generated: true,
-          dept_code: 'SE',
-          student_group: currentSchedule.id
-        };
-      });
-      const missingCourses = [];
-      requiredCourseIds.forEach((courseId) => {
-        if (!coveredCourses.has(courseId)) {
-          missingCourses.push(courseId);
-        }
-      });
-      if (missingCourses.length > 0) {
-        throw new Error(`AI schedule missing required courses: ${missingCourses.join(', ')}`);
-      }
-    
-      const finalSchedule = [...fixedSections, ...correctedSeSchedule];
-      res.json({ success: true, message: 'Schedule generated by AI.', schedule: finalSchedule });
-    } catch (e) {
-      console.error('JSON Parsing Error from AI:', e.message, jsonText);
-      // الرسالة التي تظهر في الواجهة الأمامية
-      throw new Error('AI returned schedule in an unparsable JSON format. Try adjusting the prompt rules.');
-    }
-    
+    const newSections = scheduleArray.map((section) => ({
+      ...section,
+      course_id: Number(section.course_id),
+      day_code: normalizeDay(section.day || section.day_code),
+      dept_code: 'SE',
+      is_ai_generated: true,
+      student_group: currentSchedule.id,
+    }));
+
+    res.json({ success: true, schedule: [...fixedSections, ...newSections] });
   } catch (error) {
-    console.error('AI Schedule Generation error:', error);
-    res.status(500).json({ error: error.message || 'Failed to process AI request.' });
+    console.error('AI Generation Error:', error);
+    res.status(500).json({ error: 'Failed to generate schedule. AI Error.' });
   } finally {
     client.release();
   }
-});
-
-// ============================================
-// RULES & COMMENTS ROUTES
-// ============================================
-app.get('/api/rules', async (req, res) => {
+});app.get('/api/rules', async (req, res) => {
   const client = await pool.connect();
   try {
     const query = 'SELECT rule_id, text FROM rules ORDER BY rule_id';
@@ -1237,3 +1164,4 @@ const gracefulShutdown = () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
+
