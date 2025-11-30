@@ -850,12 +850,14 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { currentLevel, currentSchedule, seCourses, user_command, rules } = req.body || {};
+    const { currentLevel, currentSchedule, seCourses, rules, user_command } = req.body || {};
+
     if (!currentLevel || !currentSchedule || !Array.isArray(currentSchedule.sections)) {
-      return res.status(400).json({ error: 'currentLevel and current schedule sections are required.' });
+      return res.status(400).json({ error: 'Current level and schedule sections are required.' });
     }
 
-    let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length ? seCourses : null;
+    // 1) Gather SE courses (mandatory + approved electives)
+    let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length > 0 ? seCourses : null;
     if (!resolvedSeCourses) {
       const coursesResult = await client.query(
         `
@@ -871,58 +873,60 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     }
 
     if (!resolvedSeCourses || resolvedSeCourses.length === 0) {
-      return res.status(404).json({ error: `No Software Engineering courses found for level ${currentLevel}.` });
+      return res.status(404).json({ error: `No courses found for level ${currentLevel}.` });
     }
 
-    const fixedSections = (currentSchedule.sections || []).filter((section) => (section.dept_code || '').toUpperCase() !== 'SE');
-    const occupiedSlots = {};
+    // 2) Occupied slots (non-SE)
+    const fixedSections = (currentSchedule.sections || []).filter((sec) => (sec.dept_code || '').toUpperCase() !== 'SE');
+    const occupiedMap = {};
     fixedSections.forEach((section) => {
-      const dayCode = (section.day_code || section.day || 'S').toString().trim().toUpperCase();
+      const day = (section.day_code || section.day || 'S').toString().trim().toUpperCase();
       const start = (section.start_time || '08:00').substring(0, 5);
-      const end = (section.end_time || '09:00').substring(0, 5);
-      const key = `${dayCode} ${start}-${end}`;
-      occupiedSlots[key] = section.course_name || section.dept_code || 'NON_SE';
+      occupiedMap[`${day} ${start}`] = `${section.course_name || section.course_id || 'Fixed'} (Fixed)`;
     });
 
+    // 3) Current SE schedule summary to preserve stability
     const currentSeSections = (currentSchedule.sections || []).filter(
       (section) => (section.dept_code || '').toUpperCase() === 'SE'
     );
-    const currentScheduleSummary =
+    const currentScheduleText =
       currentSeSections
         .map(
-          (section) =>
-            `- ${section.course_name || section.course_id}: ${section.day_code || section.day} ${section.start_time?.substring(0, 5)}-${section.end_time?.substring(0, 5)}`
+          (s) =>
+            `ID:${s.course_id} (${s.course_name || 'SE Course'}) -> ${s.day_code || s.day} ${s.start_time?.substring(0, 5)}-${s.end_time?.substring(0, 5)}`
         )
-        .join('\n') || 'None (New schedule)';
+        .join('\n') || 'No current schedule.';
 
+    // 4) Required courses text with credits
     const requiredCoursesText = resolvedSeCourses
-      .map((course) => `ID: ${course.course_id} | Name: ${course.name} | Credit: ${course.credit} hrs`)
+      .map((c) => `ID: ${c.course_id} | Name: ${c.name} | DURATION_NEEDED: ${c.credit} hours`)
       .join('\n');
 
     const normalizedRules = Array.isArray(rules) && rules.length ? rules.join('; ') : 'No additional rules.';
 
     const systemInstruction = `
-You are a strict university scheduler. Your ONLY task is to assign times for the provided courses.
+You are a strict university scheduler.
 
-CRITICAL RULES:
-1. ID INTEGRITY: You MUST use the exact numeric "ID" provided in the "REQUIRED COURSES" list for the "course_id".
-2. Schedule ALL required courses. Do not drop any course.
-3. Avoid every slot listed under "Occupied Slots".
-4. Apply the user command if provided, but do not break rules #1-3.
-5. Output JSON ONLY with a top-level object that contains a "schedule" array. No explanations.
+YOUR RULES:
+1. NON-SE COURSES: Do NOT schedule anything in "OCCUPIED SLOTS".
+2. REQUIRED COURSES: You MUST schedule EVERY course listed in "REQUIRED COURSES".
+3. CREDIT HOURS: Match the "DURATION_NEEDED" for each course.
+4. STABILITY: Review "CURRENT SE SCHEDULE". Only change the course referenced in "USER COMMAND". Keep all others at the same time unless a conflict forces a move.
+5. OUTPUT: JSON object with a "schedule" array. No explanations.
 `;
 
     const userQuery = `
 CONTEXT:
 - Level: ${currentLevel}
-- Current SE Schedule (preserve unless conflicts arise):
-${currentScheduleSummary}
 
-REQUIRED COURSES (Use these IDs exactly):
+OCCUPIED SLOTS (Forbidden):
+${JSON.stringify(occupiedMap)}
+
+CURRENT SE SCHEDULE (Preserve unless conflict exists):
+${currentScheduleText}
+
+REQUIRED COURSES (Schedule every one):
 ${requiredCoursesText}
-
-OCCUPIED SLOTS (Forbidden times):
-${JSON.stringify(occupiedSlots)}
 
 USER COMMAND:
 "${user_command || 'Generate optimal schedule'}"
@@ -933,7 +937,7 @@ ${normalizedRules}
 OUTPUT FORMAT:
 {
   "schedule": [
-    { "course_id": <NUMBER_FROM_INPUT>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }
+    { "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }
   ]
 }
 `;
@@ -954,13 +958,15 @@ OUTPUT FORMAT:
           { role: 'user', content: userQuery },
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.4,
+        temperature: 0.2,
       }),
     });
 
     const result = await response.json();
-    const content = result.choices?.[0]?.message?.content;
+    let content = result.choices?.[0]?.message?.content;
     if (!content) throw new Error('AI returned empty response.');
+
+    content = content.replace(/```json|```/g, '').trim();
 
     const generatedData = JSON.parse(content);
     let scheduleArray = generatedData.schedule || generatedData;
