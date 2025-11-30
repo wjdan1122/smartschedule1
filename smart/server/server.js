@@ -1137,6 +1137,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   } finally {
     client.release();
   }
+
 });
 // ============================================
 // RULES & COMMENTS ROUTES
