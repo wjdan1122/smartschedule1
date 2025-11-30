@@ -1,5 +1,5 @@
-﻿console.log("âœ…âœ…âœ… RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) âœ…âœ…âœ…");
-console.log("ðŸ‘‰ Running THIS server.js from smart3/smart/server");
+﻿console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ✅✅✅");
+console.log("👉 Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
 const cors = require('cors');
@@ -13,11 +13,11 @@ const http = require('http');
 const crypto = require('crypto');
 const WebSocket = require('ws');
 const { setupWSConnection } = require('y-websocket/bin/utils');
-// ðŸ‘‡ Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ù…ÙƒØªØ¨Ø© Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„Ø§Øª
+// 👇 استيراد مكتبة الإيميلات
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
-// âœ¨ Phase 1: Import validation and authentication middleware
+// ✨ Phase 1: Import validation and authentication middleware
 const {
   requireScheduler,
   requireCommitteeRole,
@@ -47,7 +47,7 @@ const server = http.createServer(app);
 const COLLAB_NAMESPACE = 'collaboration';
 const wss = new WebSocket.Server({ server });
 
-// ðŸ‘‡ run backend on 5000
+// 👇 run backend on 5000
 const PORT = process.env.PORT || 5000;
 
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -60,7 +60,7 @@ app.use(
       'http://localhost:3000',
       'http://localhost:3001',
       'https://smartschedule1-b64l.onrender.com',
-      'https://endearing-kulfi-c96605.netlify.app' // âœ… Ø±Ø§Ø¨Ø· Ù…ÙˆÙ‚Ø¹Ùƒ
+      'https://endearing-kulfi-c96605.netlify.app' // ✅ رابط موقعك
     ],
     credentials: true,
   })
@@ -69,12 +69,12 @@ app.use(
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// âœ… Ø¥Ø¹Ø¯Ø§Ø¯ Ø®Ø¯Ù…Ø© Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ
+// ✅ إعداد خدمة البريد الإلكتروني
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER, // Ø³ÙŠØªÙ… Ø¬Ù„Ø¨Ù‡ Ù…Ù† Render
-    pass: process.env.EMAIL_PASSÂ  // Ø³ÙŠØªÙ… Ø¬Ù„Ø¨Ù‡ Ù…Ù† Render
+    user: process.env.EMAIL_USER, // سيتم جلبه من Render
+    pass: process.env.EMAIL_PASS  // سيتم جلبه من Render
   }
 });
 
@@ -111,9 +111,9 @@ const pool = new Pool({
 
 pool.connect((err, client, release) => {
   if (err) {
-    console.error('âŒ Error connecting to PostgreSQL database:', err.stack);
+    console.error('❌ Error connecting to PostgreSQL database:', err.stack);
   } else {
-    console.log('âœ… Successfully connected to PostgreSQL database');
+    console.log('✅ Successfully connected to PostgreSQL database');
     release();
   }
 });
@@ -204,13 +204,13 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
   }
 });
 
-// âœ… (Ø¬Ø¯ÙŠØ¯) Ù…Ø³Ø§Ø± Ø·Ù„Ø¨ Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±
+// ✅ (جديد) مسار طلب إعادة تعيين كلمة المرور
 app.post('/api/auth/forgot-password', async (req, res) => {
   const client = await pool.connect();
   try {
     const { email } = req.body;
     const userCheck = await client.query('SELECT * FROM users WHERE email = $1', [email]);
-    
+
     if (userCheck.rows.length === 0) {
       return res.json({ message: 'If an account exists, reset instructions have been sent.' });
     }
@@ -220,7 +220,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     await client.query('UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE email = $3', [resetToken, expireDate, email]);
 
-    // Ø±Ø§Ø¨Ø· Ø§Ù„ØµÙØ­Ø© ÙÙŠ Netlify
+    // رابط الصفحة في Netlify
     const resetLink = `https://endearing-kulfi-c96605.netlify.app/reset-password?token=${resetToken}`;
 
     const mailOptions = {
@@ -241,7 +241,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   }
 });
 
-// âœ… (Ø¬Ø¯ÙŠØ¯) Ù…Ø³Ø§Ø± Ø­ÙØ¸ ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø©
+// ✅ (جديد) مسار حفظ كلمة المرور الجديدة
 app.post('/api/auth/reset-password', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -843,30 +843,157 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
     client.release();
   }
 });
-
+/*
 // ============================================
 // AI SCHEDULER ROUTE (SWITCHED TO OPENAI)
 // ============================================
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { currentLevel, currentSchedule, seCourses, rules, user_command } = req.body || {};
+    const { level, currentLevel, currentSchedule, user_command } = req.body;
 
-    if (!currentLevel || !currentSchedule || !Array.isArray(currentSchedule.sections)) {
-      return res.status(400).json({ error: 'Current level and schedule sections are required.' });
+    // Basic data gathering (Same as before)
+    const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
+    const rules = rulesResult.rows.map(r => r.text);
+    const coursesResult = await client.query(
+      `SELECT c.course_id, c.name, c.credit, c.dept_code 
+       FROM courses c
+       LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
+       WHERE (c.level = $1 AND c.dept_code = 'SE') OR (aebl.level = $1)`,
+      [currentLevel]
+    );
+    const requiredCourses = coursesResult.rows;
+    if (requiredCourses.length === 0) {
+      return res.status(404).json({ error: `No Software Engineering courses found for level ${currentLevel}.` });
+    }
+    const fixedSections = currentSchedule.sections.filter(sec => sec.dept_code !== 'SE');
+    const occupiedSlots = fixedSections.map(sec =>
+      `${sec.day_code} from ${sec.start_time?.substring(0, 5)} to ${sec.end_time?.substring(0, 5)} for ${sec.dept_code}`
+    );
+
+    // Prepare prompt parts (Modified for clarity with OpenAI)
+    const systemInstruction = `You are a university academic scheduler AI. Your task is to schedule the provided list of Software Engineering (SE) courses into available slots, following all rules strictly. You MUST treat the 'occupied slots' list as fixed and unmovable. Your final output MUST be a JSON array ONLY.`;
+    const userQuery = `
+      Objective: Generate a weekly schedule for Level ${currentLevel} students.
+      Rules:
+      1. Each course's total scheduled hours must equal its credit value.
+      2. Prefer multiple shorter blocks (1-2 hours). Avoid 3-hour blocks unless necessary.
+      3. Spread sessions across different days.
+      4. Start/End times between 08:00 and 15:00.
+      5. No overlap with occupied slots.
+      6. Use valid days: S, M, T, W, H.
+      7. Output valid JSON array ONLY. Do not include any text before or after the JSON array.
+
+      Required SE Courses: ${JSON.stringify(requiredCourses.map(c => ({ course_id: c.course_id, name: c.name, credit: c.credit, section_type: 'LECTURE' })))}
+      Occupied Slots: ${JSON.stringify(occupiedSlots)}
+      Constraints: ${JSON.stringify(rules)}
+      User Adjustment: ${user_command}
+      
+      Output Format: JSON Array of objects: [{ "course_id": number, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }]
+      
+      **STRICTLY AND ONLY OUTPUT THE JSON ARRAY. DO NOT INCLUDE ANY MARKDOWN TAGS (e.g., \`\`\`json), NO EXPLANATION, AND NO INTRODUCTORY TEXT. START WITH [ AND END WITH ].**
+    `;
+
+    // 🛑 تطبيق التحول إلى OpenAI
+    const apiKey = process.env.OPENAI_API_KEY; // ⬅️ يستخدم مفتاح OpenAI
+    if (!apiKey) {
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured.' });
     }
 
-    // 1) Gather SE courses (mandatory + approved electives)
+    const apiUrl = 'https://api.openai.com/v1/chat/completions'; // ⬅️ نقطة نهاية OpenAI
+
+    // 💡 ملاحظة: تم إزالة json_schema الذي تسبب في خطأ "Unknown parameter"
+    const payload = {
+      model: 'gpt-3.5-turbo-1106', // نموذج سريع وفعال يمكنه إخراج JSON
+      messages: [
+        { role: "system", content: systemInstruction },
+        { role: "user", content: userQuery }
+      ],
+      // 💡 التصحيح: استخدام النوع الأساسي فقط
+      response_format: {
+        type: "json_object"
+      },
+      temperature: 0.7
+    };
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}` // طريقة المصادقة لـ OpenAI
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+
+    // معالجة استجابة OpenAI
+    const message = result?.choices?.[0]?.message || {};
+    if (!result.choices || result.choices.length === 0 || !message.content) {
+      console.error('AI Response Error:', JSON.stringify(result, null, 2));
+      const aiError = result.error?.message || 'AI did not return a valid response. Check OpenAI quota/key.';
+      throw new Error(aiError);
+    }
+
+    let jsonText = message.content || '';
+
+    try {
+      // 💡 التصحيح: تنظيف النص من علامات الـ Markdown والفراغات
+      jsonText = jsonText.trim().replace(/```json|```/g, '').trim();
+
+      let generatedSeSchedule = JSON.parse(jsonText);
+
+      // 💡 التصحيح: التأكد من أن generatedSeSchedule هي مصفوفة (Array) لحل مشكلة map is not a function
+      if (!Array.isArray(generatedSeSchedule)) {
+        generatedSeSchedule = [generatedSeSchedule];
+        console.log('✅ AI output wrapped in Array to allow mapping.');
+      }
+
+      const correctedSeSchedule = generatedSeSchedule.map(section => ({
+        ...section,
+        day_code: section.day,
+        is_ai_generated: true,
+        dept_code: 'SE',
+        student_group: currentSchedule.id
+      }));
+
+      const finalSchedule = [...fixedSections, ...correctedSeSchedule];
+      res.json({ success: true, message: 'Schedule generated by AI.', schedule: finalSchedule });
+    } catch (e) {
+      console.error('JSON Parsing Error from AI:', e.message, jsonText);
+      // الرسالة التي تظهر في الواجهة الأمامية
+      throw new Error('AI returned schedule in an unparsable JSON format. Try adjusting the prompt rules.');
+    }
+
+  } catch (error) {
+    console.error('AI Schedule Generation error:', error);
+    res.status(500).json({ error: error.message || 'Failed to process AI request.' });
+  } finally {
+    client.release();
+  }
+});
+*/
+// ============================================
+// 🔥 AI SCHEDULER ROUTE (Strict Logic: Stability + Electives) 🔥
+// ============================================
+app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { currentLevel, currentSchedule, seCourses, rules, user_command } = req.body || {};
+
+    if (!currentLevel || !currentSchedule) {
+      return res.status(400).json({ error: 'Current level and schedule are required.' });
+    }
+
+    // 1. جلب المواد المطلوبة (SE الإجبارية + الاختيارية المعتمدة)
     let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length > 0 ? seCourses : null;
     if (!resolvedSeCourses) {
       const coursesResult = await client.query(
-        `
-          SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
-          FROM courses c
-          LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
-          WHERE (c.level = $1 AND c.dept_code = 'SE')
-             OR (aebl.level = $1)
-        `,
+        `SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
+         FROM courses c
+         LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
+         WHERE (c.level = $1 AND c.dept_code = 'SE') 
+            OR (aebl.level = $1)`,
         [currentLevel]
       );
       resolvedSeCourses = coursesResult.rows;
@@ -876,131 +1003,275 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: `No courses found for level ${currentLevel}.` });
     }
 
-    // 2) Occupied slots (non-SE)
-    const fixedSections = (currentSchedule.sections || []).filter((sec) => (sec.dept_code || '').toUpperCase() !== 'SE');
+    // 2. تحديد الأوقات المحجوزة (مواد الجامعة العامة - ممنوع اللمس)
+    const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
     const occupiedMap = {};
     fixedSections.forEach((section) => {
-      const day = (section.day_code || section.day || 'S').toString().trim().toUpperCase();
-      const start = (section.start_time || '08:00').substring(0, 5);
-      occupiedMap[`${day} ${start}`] = `${section.course_name || section.course_id || 'Fixed'} (Fixed)`;
+      occupiedMap[`${section.day_code} ${section.start_time}`] = `${section.course_name} (Fixed)`;
     });
 
-    // 3) Current SE schedule summary to preserve stability
-    const currentSeSections = (currentSchedule.sections || []).filter(
-      (section) => (section.dept_code || '').toUpperCase() === 'SE'
-    );
-    const currentScheduleText =
-      currentSeSections
-        .map(
-          (s) =>
-            `ID:${s.course_id} (${s.course_name || 'SE Course'}) -> ${s.day_code || s.day} ${s.start_time?.substring(0, 5)}-${s.end_time?.substring(0, 5)}`
-        )
-        .join('\n') || 'No current schedule.';
+    // 3. تجهيز الجدول الحالي (للحفاظ على استقراره)
+    const currentSeSections = (currentSchedule.sections || []).filter(s => s.dept_code === 'SE');
+    const currentScheduleText = currentSeSections.map(s =>
+      `ID:${s.course_id} (${s.course_name}) -> ${s.day_code} ${s.start_time}-${s.end_time}`
+    ).join('\n');
 
-    // 4) Required courses text with credits
+    // 4. تجهيز قائمة المواد المطلوبة مع الساعات (لإجبار الـ AI عليها)
     const requiredCoursesText = resolvedSeCourses
-      .map((c) => `ID: ${c.course_id} | Name: ${c.name} | DURATION_NEEDED: ${c.credit} hours`)
+      .map(c => `ID: ${c.course_id} | Name: ${c.name} | DURATION_NEEDED: ${c.credit} hours`)
       .join('\n');
 
-    const normalizedRules = Array.isArray(rules) && rules.length ? rules.join('; ') : 'No additional rules.';
-
+    // 5. التعليمات الصارمة (Prompt)
     const systemInstruction = `
-You are a strict university scheduler.
-
-YOUR RULES:
-1. NON-SE COURSES: Do NOT schedule anything in "OCCUPIED SLOTS".
-2. REQUIRED COURSES: You MUST schedule EVERY course listed in "REQUIRED COURSES".
-3. CREDIT HOURS: Match the "DURATION_NEEDED" for each course.
-4. STABILITY: Review "CURRENT SE SCHEDULE". Only change the course referenced in "USER COMMAND". Keep all others at the same time unless a conflict forces a move.
-5. OUTPUT: JSON object with a "schedule" array. No explanations.
-`;
+    You are a strict university scheduler.
+    
+    YOUR RULES:
+    1. **NON-SE COURSES:** Do NOT schedule anything in "OCCUPIED SLOTS". These are fixed.
+    2. **REQUIRED COURSES:** You MUST schedule EVERY course listed in "REQUIRED COURSES". Do NOT delete any course.
+    3. **CREDIT HOURS:** Ensure the scheduled duration matches "DURATION_NEEDED" for each course exactly.
+    4. **STABILITY (Crucial):** - Look at "CURRENT SE SCHEDULE".
+       - Only change the course mentioned in "USER COMMAND".
+       - Keep ALL other courses at their EXACT same time unless a conflict forces a move.
+    5. **OUTPUT:** Return a valid JSON object with a "schedule" array.
+    `;
 
     const userQuery = `
-CONTEXT:
-- Level: ${currentLevel}
+    CONTEXT:
+    - Level: ${currentLevel}
+    
+    OCCUPIED SLOTS (Forbidden):
+    ${JSON.stringify(occupiedMap)}
 
-OCCUPIED SLOTS (Forbidden):
-${JSON.stringify(occupiedMap)}
+    CURRENT SE SCHEDULE (Preserve these times unless told otherwise):
+    ${currentScheduleText || "No current schedule."}
 
-CURRENT SE SCHEDULE (Preserve unless conflict exists):
-${currentScheduleText}
+    REQUIRED COURSES (Schedule ALL of these):
+    ${requiredCoursesText}
 
-REQUIRED COURSES (Schedule every one):
-${requiredCoursesText}
+    USER COMMAND (The change you need to make):
+    "${user_command || 'Generate optimal schedule'}"
 
-USER COMMAND:
-"${user_command || 'Generate optimal schedule'}"
+    CONSTRAINTS:
+    ${(rules || []).join('; ')}
 
-ADDITIONAL RULES:
-${normalizedRules}
+    OUTPUT FORMAT:
+    {
+      "schedule": [
+        { "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }
+      ]
+    }
+    `;
 
-OUTPUT FORMAT:
-{
-  "schedule": [
-    { "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }
-  ]
-}
-`;
-
+    // 6. الاتصال بـ OpenAI
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is not configured.' });
+    if (!apiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is missing.' });
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: 'gpt-3.5-turbo-1106',
         messages: [
-          { role: 'system', content: systemInstruction },
-          { role: 'user', content: userQuery },
+          { role: "system", content: systemInstruction },
+          { role: "user", content: userQuery }
         ],
-        response_format: { type: 'json_object' },
-        temperature: 0.2,
-      }),
+        response_format: { type: "json_object" },
+        temperature: 0.2 // حرارة منخفضة للدقة
+      })
     });
 
     const result = await response.json();
-    let content = result.choices?.[0]?.message?.content;
-    if (!content) throw new Error('AI returned empty response.');
+    let jsonText = result.choices?.[0]?.message?.content || '';
 
-    content = content.replace(/```json|```/g, '').trim();
-
-    const generatedData = JSON.parse(content);
+    // 7. معالجة الرد
+    jsonText = jsonText.replace(/```json|```/g, '').trim();
+    let generatedData = JSON.parse(jsonText);
     let scheduleArray = generatedData.schedule || generatedData;
+
     if (!Array.isArray(scheduleArray)) {
-      scheduleArray = Object.values(generatedData).find((val) => Array.isArray(val)) || [];
+      scheduleArray = Object.values(generatedData).find(val => Array.isArray(val)) || [];
     }
 
-    const normalizeDay = (value) => {
-      const map = { SUN: 'S', MON: 'M', TUE: 'T', WED: 'W', THU: 'H', TH: 'H', S: 'S', M: 'M', T: 'T', W: 'W', H: 'H' };
-      return map[String(value || '').toUpperCase()] || 'S';
-    };
+    // 8. دمج النتائج
+    const normalizeDay = (d) => ({ 'SUN': 'S', 'MON': 'M', 'TUE': 'T', 'WED': 'W', 'THU': 'H', 'TH': 'H' }[String(d).toUpperCase()] || String(d).toUpperCase());
 
-    const newSections = scheduleArray.map((section) => ({
-      ...section,
-      course_id: Number(section.course_id),
-      day_code: normalizeDay(section.day || section.day_code),
+    const newSections = scheduleArray.map(s => ({
+      ...s,
+      day_code: normalizeDay(s.day || s.day_code),
       dept_code: 'SE',
       is_ai_generated: true,
       student_group: currentSchedule.id,
+      course_id: Number(s.course_id)
     }));
 
-    const returnedCourseIds = new Set(newSections.map((section) => section.course_id));
-    const missingCourses = resolvedSeCourses
-      .map((course) => Number(course.course_id))
-      .filter((id) => !returnedCourseIds.has(id));
-
-    if (missingCourses.length > 0) {
-      throw new Error(`AI schedule missing required courses: ${missingCourses.join(', ')}`);
-    }
-
     res.json({ success: true, schedule: [...fixedSections, ...newSections] });
+
   } catch (error) {
-    console.error('AI Generation Error:', error);
+    console.error('AI Error:', error);
     res.status(500).json({ error: 'Failed to generate schedule. AI Error.' });
+  } finally {
+    client.release();
+  }
+});
+// ============================================
+// RULES & COMMENTS ROUTES
+// ============================================
+app.get('/api/rules', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const query = 'SELECT rule_id, text FROM rules ORDER BY rule_id';
+    const result = await client.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch rules.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/rules', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { text } = req.body;
+    const query = 'INSERT INTO rules (text) VALUES ($1) RETURNING *';
+    const result = await client.query(query, [text]);
+    res.json({ success: true, rule: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to add rule.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/rules/:ruleId', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { ruleId } = req.params;
+    const query = 'DELETE FROM rules WHERE rule_id = $1';
+    await client.query(query, [ruleId]);
+    res.json({ success: true, message: 'Rule deleted.' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete rule.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/comments', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { student_id, schedule_version_id, comment } = req.body;
+    const insertQuery = `INSERT INTO comments (student_id, schedule_version_id, comment) VALUES ($1, $2, $3) RETURNING *;`;
+    const result = await client.query(insertQuery, [student_id, schedule_version_id, comment]);
+    res.status(201).json({ success: true, message: 'Comment added successfully.', comment: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to add comment. Check server logs for details.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/comments/all', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const query = `
+          SELECT c.id as comment_id, c.comment, c.created_at, s.student_id, s.level as student_level, u.name as student_name, sv.id as schedule_version_id, sv.version_comment
+          FROM comments c
+          LEFT JOIN students s ON c.student_id = s.student_id
+          LEFT JOIN users u ON s.user_id = u.user_id
+          LEFT JOIN schedule_versions sv ON c.schedule_version_id = sv.id
+          WHERE c.user_id IS NULL 
+          ORDER BY c.created_at DESC;
+        `;
+    const result = await client.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch all comments.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/comments/:schedule_version_id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { schedule_version_id } = req.params;
+    const query = `
+      SELECT c.id, c.comment, c.created_at, u.name AS student_name
+      FROM comments c
+      JOIN students s ON c.student_id = s.student_id
+      JOIN users u ON s.user_id = u.user_id
+      WHERE c.schedule_version_id = $1 AND c.user_id IS NULL 
+      ORDER BY c.created_at DESC
+    `;
+    const result = await client.query(query, [schedule_version_id]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch comments.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Faculty Comments
+app.get('/api/schedule-versions/approved', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { level } = req.query || {};
+    let sql = 'SELECT * FROM schedule_versions WHERE committee_approved = true';
+    const params = [];
+    if (level) { params.push(level); sql += ' AND level = $1'; }
+    sql += ' ORDER BY created_at DESC';
+    const result = await client.query(sql, params);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch approved schedule versions.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/schedule-versions/:id/faculty-comments', authenticateToken, requireCommitteeRole, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const sql = `SELECT c.id, c.comment, c.created_at, u.user_id, u.name AS faculty_name, u.email AS faculty_email FROM comments c JOIN users u ON c.user_id = u.user_id WHERE c.schedule_version_id = $1 AND c.user_id IS NOT NULL ORDER BY c.created_at DESC`;
+    const result = await client.query(sql, [id]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch faculty comments.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/schedule-versions/:id/faculty-comments', authenticateToken, requireFaculty, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { comment } = req.body || {};
+    if (!comment || !String(comment).trim()) return res.status(400).json({ message: 'Comment is required.' });
+    const userId = req.user?.id;
+    const insert = `INSERT INTO comments (schedule_version_id, user_id, comment) VALUES ($1, $2, $3) RETURNING id, schedule_version_id, user_id, comment, created_at`;
+    const result = await client.query(insert, [id, userId, String(comment).trim()]);
+    res.status(201).json({ success: true, comment: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to create faculty comment.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/schedule-versions/:id/my-faculty-comments', authenticateToken, requireFaculty, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+    const sql = `SELECT c.id, c.comment, c.created_at FROM comments c WHERE c.schedule_version_id = $1 AND c.user_id = $2 ORDER BY c.created_at DESC`;
+    const result = await client.query(sql, [id, userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch my faculty comments.' });
   } finally {
     client.release();
   }
@@ -1013,7 +1284,7 @@ app.get('/api/health', (req, res) => {
 
 app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
-  res.status(500).json({ error: 'Ø®Ø·Ø£ Ø¯Ø§Ø®Ù„ÙŠ ÙÙŠ Ø§Ù„Ø®Ø§Ø¯Ù…' });
+  res.status(500).json({ error: 'خطأ داخلي في الخادم' });
 });
 
 server.listen(PORT, () => {
@@ -1042,7 +1313,4 @@ const gracefulShutdown = () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
-
-
-
 
