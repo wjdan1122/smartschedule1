@@ -242,7 +242,14 @@ const ManageSchedules = () => {
             // 💡 التصحيح هنا: استخدام JSON.stringify() لتحويل الكائن إلى نص JSON صالح
             const response = await fetchData('https://smartschedule1-b64l.onrender.com/api/schedule/generate', {
                 method: 'POST',
-                body: JSON.stringify({ currentLevel, currentSchedule, user_command: command }),
+                body: JSON.stringify({
+                    currentLevel,
+                    currentSchedule,
+                    user_command: command,
+                    seCourses: allCourses.filter((course) =>
+                        String(course.dept_code || '').toUpperCase() === 'SE' || course.is_elective
+                    ),
+                }),
             });
             setSchedules(prev => prev.map(sch => sch.id === scheduleId ? { ...sch, sections: response.schedule } : sch));
         } catch (err) { setError(err.message); } finally { setIsGenerating(null); }
