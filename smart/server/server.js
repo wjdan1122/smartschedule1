@@ -57,7 +57,7 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 app.use(
   cors({
     origin: [
-      'http://localhost:3000',
+      'http://localhost:3000', 'https://smartschedule1-three.vercel.app',
       'http://localhost:3001',
       'https://smartschedule1-b64l.onrender.com',
       'https://endearing-kulfi-c96605.netlify.app' // ✅ رابط موقعك
