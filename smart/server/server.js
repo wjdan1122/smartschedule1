@@ -873,7 +873,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
     const dbRules = rulesResult.rows.map(r => r.text);
 
-    // 3. Identify Occupied Slots (Fixed Sections + Rules Filtering)
+    // 3. Identify Occupied Slots (Fixed Sections)
     const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
     const occupiedMap = {};
 
@@ -886,28 +886,14 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       }
     });
 
-    // 4. Calculate FREE Slots (Apply DB Rules Programmatically)
+    // 🛑 4. Calculate FREE Slots (إزالة المنطق البرمجي للقواعد والاعتماد على الأقسام الثابتة فقط)
+    // نرسل لـ AI جميع الأوقات الممكنة ليقوم بتطبيق قواعد الغداء بنفسه
     const days = ['S', 'M', 'T', 'W', 'H'];
     const hours = [8, 9, 10, 11, 12, 13, 14];
     const freeSlots = [];
 
-    // تطبيق القواعد الثابتة (مثل الغداء)
-    const rulesText = dbRules.join(' ').toLowerCase();
-    
-    // قاعدة الغداء: Reserve 12:00-13:00 daily
-    const avoidDailyLunch = rulesText.includes('12:00-13:00 daily');
-    
-    // قاعدة أخرى: Reserve 12:00-14:00 on Monday and Wed
-    const avoidMonWed = rulesText.includes('12:00-14:00 on monday') || rulesText.includes('12:00-14:00 on wed');
-
     days.forEach(day => {
       hours.forEach(hour => {
-        // Daily Lunch Check
-        if (avoidDailyLunch && hour === 12) return; 
-
-        // Mon/Wed Check
-        if (avoidMonWed && (day === 'M' || day === 'W') && (hour === 12 || hour === 13)) return;
-
         if (!occupiedMap[`${day}-${hour}`]) {
           const timeStr = `${String(hour).padStart(2, '0')}:00-${String(hour + 1).padStart(2, '0')}:00`;
           freeSlots.push({ day, time: timeStr });
@@ -915,24 +901,24 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       });
     });
 
-    // 5. Prepare Context
+    // 5. Prepare Context (تنسيق أفضل لبيانات المقررات)
     const currentSeSections = (currentSchedule.sections || []).filter(s => s.dept_code === 'SE');
     const currentScheduleText = currentSeSections.map(s =>
       `ID:${s.course_id} (${s.course_name}) -> ${s.day_code} ${s.start_time}-${s.end_time}`
     ).join('\n');
 
     const requiredCoursesText = resolvedSeCourses
-      .map(c => `ID: ${c.course_id} | Name: ${c.name} | TOTAL_HOURS: ${c.credit}`)
+      .map(c => `| ID: ${c.course_id} | Name: ${c.name} | TOTAL_HOURS: ${c.credit} |`)
       .join('\n');
-
-    // 6. Prompt (Now including DB rules explicitly)
+    
+    // 6. Prompt (تشديد صياغة الأهداف)
     const systemInstruction = `
     You are a smart university scheduler.
     
-    PRIORITY ORDER:
-    1. **USER COMMAND:** Execute the user's request FIRST (e.g., "Move Course X to Thursday"). This overrides "Stability".
-    2. **STRICT RULES (Must be obeyed):** Adhere to the rules provided below.
-    3. **REQUIRED COURSES:** Schedule ALL courses using ONLY the AVAILABLE_SLOTS. Split them if needed.
+    PRIORITY ORDER (STRICTLY FOLLOW THIS):
+    1. **TOTAL HOURS MATCH:** Ensure the sum of scheduled hours for each course EXACTLY equals its TOTAL_HOURS. This is NON-NEGOTIABLE.
+    2. **DB RULES:** Obey ALL DB rules (especially lunch breaks).
+    3. **USER COMMAND:** Execute the user's request.
     4. **OUTPUT:** JSON object ONLY.
     `;
 
@@ -940,25 +926,28 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     CONTEXT: Level ${currentLevel}
     
     **STRICT SYSTEM RULES:**
-    1. All courses MUST be covered according to their TOTAL_HOURS (credit).
+    1. All courses MUST be covered according to their TOTAL_HOURS (credit) EXACTLY.
     2. Ensure NO overlap between any SE sections scheduled.
     3. Use ONLY the 'AVAILABLE_SLOTS' provided.
-    4. If a course has a credit of 3, you must schedule 3 hours total (e.g., one 2-hour block and one 1-hour block).
-    5. If a course has a credit of 2, you must schedule 2 hours total (e.g., one 2-hour block or two 1-hour blocks).
-    6. Prefer splitting 3-hour courses into two sessions on different days.
-    ${dbRules.map((rule, index) => `${index + 7}. DB Rule: ${rule}`).join('\n')}
+    4. The total duration of sessions for course ID: X must be equal to TOTAL_HOURS.
+    5. Prefer splitting 3-hour courses into two sessions on different days (e.g., 2 hours + 1 hour).
+    
+    **DB RULES (CRITICAL CONSTRAINTS):**
+    ${dbRules.map((rule, index) => `${index + 1}. ${rule}`).join('\n')}
 
-    AVAILABLE_SLOTS (These are the ONLY valid times. Do NOT invent others):
+    AVAILABLE_SLOTS (These are the ONLY valid times available after factoring fixed courses. Do NOT invent others):
     ${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
 
-    REQUIRED COURSES:
+    REQUIRED COURSES TABLE (Must meet TOTAL_HOURS exactly):
+    | Course ID | Course Name | TOTAL_HOURS |
+    |-----------|-------------|-------------|
     ${requiredCoursesText}
 
     CURRENT SCHEDULE (Reference):
     ${currentScheduleText}
 
     USER COMMAND (HIGHEST PRIORITY - Apply this change first!): 
-    "${user_command || 'Generate optimal schedule'}"
+    "${user_command || 'Generate optimal schedule that minimizes gaps'}"
 
     OUTPUT FORMAT:
     { "schedule": [{ "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }] }
@@ -1026,13 +1015,31 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
         }
       }
     }
+    
+    // التحقق 2: التأكد من الالتزام بالساعات المعتمدة (REQUIRED_HOURS)
+    const totalScheduledHours = finalSeSections.reduce((acc, sec) => {
+        const startHour = parseInt(sec.start_time.split(':')[0]);
+        const endHour = parseInt(sec.end_time.split(':')[0]);
+        const duration = endHour - startHour;
+        acc[sec.course_id] = (acc[sec.course_id] || 0) + duration;
+        return acc;
+    }, {});
+    
+    resolvedSeCourses.forEach(course => {
+        const required = course.credit;
+        const scheduled = totalScheduledHours[course.course_id] || 0;
+        if (required !== scheduled) {
+            validationErrors.push(`Course ID ${course.course_id} (${course.name}) required ${required} hours, but only ${scheduled} were scheduled.`);
+        }
+    });
+
 
     if (validationErrors.length > 0) {
       // إذا حدث خرق صارم للقواعد، نُرسل رسالة خطأ واضحة
       return res.status(200).json({ 
         success: false, 
         schedule: currentSchedule.sections, 
-        error: 'AI schedule failed mandatory validation: Time overlaps occurred or core rules were broken. Please refine your command or try again.',
+        error: 'AI schedule failed mandatory validation: Time overlaps, or course credit hours were not met exactly. Please refine your command or try again.',
         validationErrors
       });
     }
