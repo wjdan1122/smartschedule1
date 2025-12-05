@@ -6,9 +6,9 @@
 const validator = require('validator');
 
 /**
- * Validates KSU email format with 8-digit student ID
+ * Validates email format (accepts any domain)
  * @param {string} email - Email to validate
- * @returns {object} { isValid: boolean, error: string, type: 'student'|'staff' }
+ * @returns {object} { isValid: boolean, error: string, type: 'student'|'staff'|'generic' }
  */
 const validateKSUEmail = (email) => {
     if (!email || typeof email !== 'string') {
@@ -17,27 +17,24 @@ const validateKSUEmail = (email) => {
 
     const trimmedEmail = email.trim().toLowerCase();
 
-    // Check if it's a valid email format first
+    // Check basic email format
     if (!validator.isEmail(trimmedEmail)) {
         return { isValid: false, error: 'Invalid email format' };
     }
 
-    // Student email: 9 digits + @student.ksu.edu.sa
+    // Preserve legacy student/staff tags for KSU domains
     const studentPattern = /^[0-9]{9}@student\.ksu\.edu\.sa$/;
     if (studentPattern.test(trimmedEmail)) {
         return { isValid: true, type: 'student', email: trimmedEmail };
     }
 
-    // Staff email: anything + @ksu.edu.sa (but NOT @student.ksu.edu.sa)
     const staffPattern = /^[a-zA-Z0-9._-]+@ksu\.edu\.sa$/;
     if (staffPattern.test(trimmedEmail)) {
         return { isValid: true, type: 'staff', email: trimmedEmail };
     }
 
-    return {
-        isValid: false,
-        error: 'Email must be: 9 digits for students (e.g., 123456789@student.ksu.edu.sa) or staff email (@ksu.edu.sa)'
-    };
+    // Fallback: accept any other valid email as generic
+    return { isValid: true, type: 'generic', email: trimmedEmail };
 };
 
 /**
@@ -152,6 +149,11 @@ const validateRole = (role, emailType) => {
             isValid: false,
             error: `Invalid role. Allowed roles: ${allowedRoles.join(', ')}`
         };
+    }
+
+    // For generic emails, honor the requested role if allowed
+    if (emailType === 'generic') {
+        return { isValid: true, sanitized: trimmed };
     }
 
     // Students can only have 'student' role
