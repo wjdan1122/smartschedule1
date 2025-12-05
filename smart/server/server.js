@@ -845,473 +845,166 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
   }
 });
 // ============================================
-// 🎯 AI SCHEDULER - نسخة محسّنة مع تطبيق صارم للقواعد
+// 🔥 AI SCHEDULER ROUTE (Dynamic Rules + User Priority) 🔥
 // ============================================
-
-// ============================================
-// 🎯 AI SCHEDULER - نسخة محسّنة ومطوّرة
-// ============================================
-
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
-
   try {
-    const { currentLevel, currentSchedule, user_command } = req.body || {};
-
+    const { currentLevel, currentSchedule, seCourses, rules, user_command } = req.body || {};
+    
     if (!currentLevel || !currentSchedule) {
       return res.status(400).json({ error: 'Current level and schedule are required.' });
     }
 
-    console.log(`📚 Generating schedule for Level ${currentLevel}`);
-
-    // ============================================
-    // 1️⃣ جلب القواعد من قاعدة البيانات
-    // ============================================
-    const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
-    const rules = rulesResult.rows.map(r => r.text);
-
-    console.log(`📋 Found ${rules.length} rules in database:`, rules);
-
-    // ============================================
-    // 2️⃣ جلب المواد الخاصة بالمستوى المحدد فقط
-    // ============================================
-    const coursesQuery = `
-      SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
-      FROM courses c
-      LEFT JOIN approved_electives_by_level aebl 
-        ON c.course_id = aebl.course_id AND aebl.level = $1
-      WHERE (c.level = $1 AND c.dept_code = 'SE') 
-         OR (c.is_elective = true AND aebl.level = $1)
-      ORDER BY c.is_elective, c.name
-    `;
-
-    const coursesResult = await client.query(coursesQuery, [currentLevel]);
-    const levelCourses = coursesResult.rows;
-
-    if (levelCourses.length === 0) {
-      return res.status(404).json({
-        error: `No Software Engineering courses found for level ${currentLevel}`,
-        suggestion: 'Please check course assignments and elective approvals'
-      });
+    // 1. Fetch Required Courses
+    let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length > 0 ? seCourses : null;
+    if (!resolvedSeCourses) {
+      const coursesResult = await client.query(
+        `SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
+         FROM courses c
+         LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
+         WHERE (c.level = $1 AND c.dept_code = 'SE') 
+            OR (aebl.level = $1)`,
+        [currentLevel]
+      );
+      resolvedSeCourses = coursesResult.rows;
     }
 
-    console.log(`📖 Found ${levelCourses.length} courses for level ${currentLevel}:`,
-      levelCourses.map(c => `${c.name} (${c.credit}h)`));
-
-    // ============================================
-    // 3️⃣ بناء خريطة الأوقات المحجوزة
-    // ============================================
-    const fixedSections = (currentSchedule.sections || [])
-      .filter(sec => sec.dept_code !== 'SE');
-
-    const occupiedSlots = new Set();
-    const occupiedDetails = [];
-
+    // 2. Identify Occupied Slots
+    const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
+    const occupiedMap = {};
     fixedSections.forEach((section) => {
       const startHour = parseInt(section.start_time.split(':')[0]);
       const endHour = parseInt(section.end_time.split(':')[0]);
-
       for (let h = startHour; h < endHour; h++) {
-        const slot = `${section.day_code}-${h}`;
-        occupiedSlots.add(slot);
-        occupiedDetails.push({
-          day: section.day_code,
-          time: `${h}:00-${h + 1}:00`,
-          course: section.course_name || 'Unknown'
-        });
+        occupiedMap[`${section.day_code}-${h}`] = true;
       }
     });
 
-    console.log(`🔒 Occupied time slots: ${occupiedSlots.size}`);
-
-    // ============================================
-    // 4️⃣ بناء قائمة الأوقات المحظورة من القواعد
-    // ============================================
-    const BLOCKED_SLOTS = new Set();
-
-    // 🚫 حظر وقت الغداء دائماً (12:00-13:00)
-    const lunchDays = ['S', 'M', 'T', 'W', 'H'];
-    lunchDays.forEach(day => {
-      BLOCKED_SLOTS.add(`${day}-12`);
-    });
-
-    // 🚫 حظر يوم الجمعة بالكامل
-    for (let h = 8; h <= 14; h++) {
-      BLOCKED_SLOTS.add(`F-${h}`);
-    }
-
-    // 🚫 تحليل القواعد النصية للحظر الإضافي
-    rules.forEach(rule => {
-      const ruleLower = rule.toLowerCase();
-
-      // حظر أيام محددة
-      if (ruleLower.includes('no classes') || ruleLower.includes('no class')) {
-        if (ruleLower.includes('sunday')) {
-          for (let h = 8; h <= 14; h++) BLOCKED_SLOTS.add(`S-${h}`);
-        }
-        if (ruleLower.includes('monday')) {
-          for (let h = 8; h <= 14; h++) BLOCKED_SLOTS.add(`M-${h}`);
-        }
-        if (ruleLower.includes('tuesday')) {
-          for (let h = 8; h <= 14; h++) BLOCKED_SLOTS.add(`T-${h}`);
-        }
-        if (ruleLower.includes('wednesday')) {
-          for (let h = 8; h <= 14; h++) BLOCKED_SLOTS.add(`W-${h}`);
-        }
-        if (ruleLower.includes('thursday')) {
-          for (let h = 8; h <= 14; h++) BLOCKED_SLOTS.add(`H-${h}`);
-        }
-      }
-
-      // حظر أوقات محددة
-      const timeMatch = ruleLower.match(/(?:no|avoid|block).*?(\d+):?(\d{0,2})/);
-      if (timeMatch) {
-        const hour = parseInt(timeMatch[1]);
-        if (hour >= 8 && hour <= 14) {
-          lunchDays.forEach(day => BLOCKED_SLOTS.add(`${day}-${hour}`));
-        }
-      }
-    });
-
-    console.log(`🚫 Blocked slots (rules): ${BLOCKED_SLOTS.size}`);
-
-    // ============================================
-    // 5️⃣ حساب الأوقات المتاحة الفعلية
-    // ============================================
-    const AVAILABLE_SLOTS = [];
+    // 3. Calculate Physically Free Slots
     const days = ['S', 'M', 'T', 'W', 'H'];
-    const hours = [8, 9, 10, 11, 12, 13, 14];
+    const hours = [8, 9, 10, 11, 12, 13, 14]; 
+    const freeSlots = [];
 
     days.forEach(day => {
       hours.forEach(hour => {
-        const slot = `${day}-${hour}`;
-        if (!occupiedSlots.has(slot) && !BLOCKED_SLOTS.has(slot)) {
-          AVAILABLE_SLOTS.push({
-            day,
-            hour,
-            time: `${String(hour).padStart(2, '0')}:00`
-          });
+        if (!occupiedMap[`${day}-${hour}`]) {
+           const timeStr = `${String(hour).padStart(2, '0')}:00-${String(hour + 1).padStart(2, '0')}:00`;
+           freeSlots.push({ day, time: timeStr });
         }
       });
     });
 
-    if (AVAILABLE_SLOTS.length === 0) {
-      return res.status(400).json({
-        error: 'No available time slots found',
-        details: {
-          occupied: occupiedSlots.size,
-          blocked: BLOCKED_SLOTS.size,
-          total: days.length * hours.length
-        }
-      });
-    }
+    // 4. Prepare Context
+    const currentSeSections = (currentSchedule.sections || []).filter(s => s.dept_code === 'SE');
+    const currentScheduleText = currentSeSections.map(s => 
+      `ID:${s.course_id} (${s.course_name}) -> ${s.day_code} ${s.start_time}-${s.end_time}`
+    ).join('\n');
 
-    console.log(`✅ Available slots: ${AVAILABLE_SLOTS.length}`);
+    const requiredCoursesText = resolvedSeCourses
+      .map(c => `ID: ${c.course_id} | Name: ${c.name} | TOTAL_HOURS: ${c.credit}`)
+      .join('\n');
 
-    // ============================================
-    // 6️⃣ بناء Prompt للذكاء الاصطناعي
-    // ============================================
-    const dayMapping = {
-      'S': 'Sunday', 'M': 'Monday', 'T': 'Tuesday',
-      'W': 'Wednesday', 'H': 'Thursday'
-    };
+    // Formatting rules as a clear list
+    const formattedRules = (rules || []).map(r => `- ${r}`).join('\n');
 
-    const systemPrompt = `You are an expert university course scheduler. Your task is to create an optimal weekly schedule.
+    // 5. Dynamic Prompt
+    const systemInstruction = `
+    You are a smart university scheduler.
+    
+    PRIORITY ORDER:
+    1. **USER COMMAND:** Execute the user's request FIRST. This is the highest authority.
+    2. **CUSTOM RULES:** Read the "CUSTOM RULES" section carefully.
+       - If it says "Break at 12", DO NOT schedule at 12:00.
+       - If it says "No classes on Thursday", DO NOT use Day 'H'.
+    3. **REQUIRED COURSES:** Schedule ALL courses.
+    4. **STABILITY:** For courses NOT mentioned in the command, try to keep their "CURRENT SCHEDULE" time.
+    5. **OUTPUT:** JSON array only.
+    `;
 
-🎯 OBJECTIVE:
-Generate a complete schedule for Level ${currentLevel} Software Engineering courses.
+    const userQuery = `
+    CONTEXT: Level ${currentLevel}
+    
+    CUSTOM RULES (Obey these!):
+    ${formattedRules || "No custom rules."}
 
-📋 STRICT RULES YOU MUST FOLLOW:
-${rules.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+    AVAILABLE_SLOTS (Physically free, but check Rules first):
+    ${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
 
-🚫 ABSOLUTELY FORBIDDEN TIME SLOTS:
-${Array.from(BLOCKED_SLOTS).slice(0, 20).map(slot => {
-      const [d, h] = slot.split('-');
-      return `${dayMapping[d] || d} ${h}:00-${parseInt(h) + 1}:00`;
-    }).join(', ')}
-${BLOCKED_SLOTS.size > 20 ? `... and ${BLOCKED_SLOTS.size - 20} more blocked slots` : ''}
+    REQUIRED COURSES:
+    ${requiredCoursesText}
 
-🔒 ALREADY OCCUPIED (Other departments):
-${occupiedDetails.slice(0, 10).map(o => `${dayMapping[o.day]} ${o.time} (${o.course})`).join('\n')}
-${occupiedDetails.length > 10 ? `... and ${occupiedDetails.length - 10} more occupied slots` : ''}
+    CURRENT SCHEDULE (Reference):
+    ${currentScheduleText}
 
-✅ AVAILABLE TIME SLOTS (USE ONLY THESE):
-${AVAILABLE_SLOTS.map(s => `${dayMapping[s.day]} ${s.time}`).join(', ')}
+    USER COMMAND (Highest Priority): 
+    "${user_command || 'Generate optimal schedule'}"
 
-📚 COURSES TO SCHEDULE (Level ${currentLevel} ONLY):
-${levelCourses.map((c, i) => `${i + 1}. ${c.name} - ${c.credit} credit hours ${c.is_elective ? '(ELECTIVE)' : '(REQUIRED)'}`).join('\n')}
+    OUTPUT FORMAT:
+    { "schedule": [{ "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }] }
+    `;
 
-📐 SCHEDULING REQUIREMENTS:
-1. Each course MUST get exactly its credit hours per week
-2. Prefer 1-2 hour blocks over longer sessions
-3. Distribute classes across different days when possible
-4. Leave gaps for students to rest
-5. Schedule core courses before electives
-6. NEVER use blocked or occupied time slots
-
-⚠️ CRITICAL VALIDATIONS:
-- Verify each time slot is in the AVAILABLE list
-- Check no course exceeds its credit hours
-- Ensure no time conflicts exist
-- Confirm all courses for Level ${currentLevel} are included
-
-${user_command ? `\n👤 ADDITIONAL USER REQUEST:\n${user_command}` : ''}`;
-
-    const userPrompt = `Generate the schedule in STRICT JSON format. No explanations, just valid JSON:
-
-{
-  "schedule": [
-    {
-      "course_id": <number>,
-      "course_name": "<exact name from course list>",
-      "day": "<S|M|T|W|H>",
-      "start_time": "HH:00",
-      "end_time": "HH:00",
-      "section_type": "LECTURE",
-      "duration_hours": <number>
-    }
-  ],
-  "validation": {
-    "total_hours_scheduled": <number>,
-    "courses_scheduled": <number>,
-    "slots_used": <number>
-  }
-}
-
-IMPORTANT: Output ONLY the JSON object, nothing else.`;
-
-    // ============================================
-    // 7️⃣ استدعاء OpenAI API
-    // ============================================
+    // 6. Call OpenAI
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: 'OPENAI_API_KEY not configured' });
-    }
+    if (!apiKey) return res.status(500).json({ error: 'OPENAI_API_KEY is missing.' });
 
-    console.log('🤖 Calling OpenAI API...');
-
-    const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: 'gpt-3.5-turbo-1106',
         messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
+          { role: "system", content: systemInstruction },
+          { role: "user", content: userQuery }
         ],
-        response_format: { type: 'json_object' },
-        temperature: 0.3,
-        max_tokens: 3000
+        response_format: { type: "json_object" },
+        temperature: 0.2
       })
     });
 
-    if (!aiResponse.ok) {
-      const errorData = await aiResponse.json();
-      console.error('❌ OpenAI Error:', errorData);
-      return res.status(500).json({
-        error: 'AI service error',
-        details: errorData.error?.message
-      });
+    const result = await response.json();
+    let jsonText = result.choices?.[0]?.message?.content || '';
+    jsonText = jsonText.replace(/```json|```/g, '').trim();
+    
+    let generatedData = JSON.parse(jsonText);
+    let scheduleArray = generatedData.schedule || generatedData;
+
+    if (!Array.isArray(scheduleArray)) scheduleArray = Object.values(generatedData).find(val => Array.isArray(val)) || [];
+
+    // 7. Safety Net (The Lifesaver)
+    const scheduledIds = scheduleArray.map(s => Number(s.course_id));
+    const missingCourses = resolvedSeCourses.filter(c => !scheduledIds.includes(c.course_id));
+
+    if (missingCourses.length > 0) {
+        console.warn('⚠️ AI missed courses. Forcing them back...', missingCourses.map(c => c.name));
+        const fallbackSlot = freeSlots.length > 0 ? freeSlots[0] : { day: "S", time: "08:00-09:00" };
+        const forcedSections = missingCourses.map(c => ({
+            course_id: c.course_id,
+            day: fallbackSlot.day, 
+            start_time: fallbackSlot.time.split('-')[0],
+            end_time: `0${parseInt(fallbackSlot.time.split('-')[0]) + (c.credit || 1)}:00`.slice(-5), 
+            section_type: "LECTURE", is_forced: true 
+        }));
+        scheduleArray = [...scheduleArray, ...forcedSections];
     }
 
-    const aiResult = await aiResponse.json();
-    let aiContent = aiResult.choices?.[0]?.message?.content || '{}';
-
-    // تنظيف النص من markdown
-    aiContent = aiContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-    let parsedSchedule;
-    try {
-      parsedSchedule = JSON.parse(aiContent);
-    } catch (parseError) {
-      console.error('❌ JSON Parse Error:', aiContent.substring(0, 500));
-      return res.status(500).json({
-        error: 'AI returned invalid JSON',
-        sample: aiContent.substring(0, 300)
-      });
-    }
-
-    let scheduleArray = parsedSchedule.schedule || [];
-    if (!Array.isArray(scheduleArray)) {
-      scheduleArray = Object.values(parsedSchedule).find(v => Array.isArray(v)) || [];
-    }
-
-    console.log(`📊 AI generated ${scheduleArray.length} sections`);
-
-    // ============================================
-    // 8️⃣ التحقق الصارم من الجدول
-    // ============================================
-    const validatedSections = [];
-    const validationErrors = [];
-    const usedSlots = new Set();
-    const courseHoursMap = {};
-
-    const availableSlotsSet = new Set(
-      AVAILABLE_SLOTS.map(s => `${s.day}-${s.hour}`)
-    );
-
-    scheduleArray.forEach((section, index) => {
-      const errors = [];
-
-      // التحقق من course_id
-      const courseId = Number(section.course_id);
-      const course = levelCourses.find(c => c.course_id === courseId);
-
-      if (!course) {
-        errors.push(`Invalid course_id: ${courseId} (not in Level ${currentLevel})`);
-      }
-
-      // تطبيع اليوم
-      const dayMap = {
-        'SUN': 'S', 'SUNDAY': 'S',
-        'MON': 'M', 'MONDAY': 'M',
-        'TUE': 'T', 'TUESDAY': 'T',
-        'WED': 'W', 'WEDNESDAY': 'W',
-        'THU': 'H', 'THURSDAY': 'H', 'TH': 'H'
-      };
-
-      let day = String(section.day || '').toUpperCase();
-      day = dayMap[day] || day;
-
-      if (!days.includes(day)) {
-        errors.push(`Invalid day: ${section.day}`);
-      }
-
-      // التحقق من الأوقات
-      const startHour = parseInt((section.start_time || '').split(':')[0]);
-      const endHour = parseInt((section.end_time || '').split(':')[0]);
-      const duration = endHour - startHour;
-
-      if (isNaN(startHour) || isNaN(endHour) || duration <= 0) {
-        errors.push(`Invalid time: ${section.start_time} - ${section.end_time}`);
-      }
-
-      // التحقق من كل ساعة في النطاق
-      for (let h = startHour; h < endHour; h++) {
-        const slot = `${day}-${h}`;
-
-        // 🚫 تحقق من الحظر
-        if (BLOCKED_SLOTS.has(slot)) {
-          errors.push(`BLOCKED TIME: ${day} ${h}:00 (violates rules)`);
-        }
-
-        // 🔒 تحقق من الأوقات المحجوزة
-        if (occupiedSlots.has(slot)) {
-          errors.push(`OCCUPIED: ${day} ${h}:00 (other department)`);
-        }
-
-        // ✅ تحقق من التوفر
-        if (!availableSlotsSet.has(slot)) {
-          errors.push(`NOT AVAILABLE: ${day} ${h}:00`);
-        }
-
-        // ⚠️ تحقق من التعارض الداخلي
-        if (usedSlots.has(slot)) {
-          errors.push(`CONFLICT: ${day} ${h}:00 (already scheduled)`);
-        }
-      }
-
-      if (errors.length > 0) {
-        validationErrors.push({
-          section: `${course?.name || courseId} - ${day} ${section.start_time}`,
-          errors
-        });
-        return;
-      }
-
-      // ✅ تسجيل الأوقات المستخدمة
-      for (let h = startHour; h < endHour; h++) {
-        usedSlots.add(`${day}-${h}`);
-      }
-
-      // تسجيل الساعات
-      courseHoursMap[courseId] = (courseHoursMap[courseId] || 0) + duration;
-
-      // إضافة للجدول النهائي
-      validatedSections.push({
-        course_id: courseId,
-        course_name: course.name,
-        day_code: day,
-        start_time: `${String(startHour).padStart(2, '0')}:00:00`,
-        end_time: `${String(endHour).padStart(2, '0')}:00:00`,
-        section_type: section.section_type || 'LECTURE',
+    // 8. Merge & Return
+    const normalizeDay = (d) => ({'SUN':'S','MON':'M','TUE':'T','WED':'W','THU':'H','TH':'H'}[String(d).toUpperCase()] || String(d).toUpperCase());
+    
+    const newSections = scheduleArray.map(s => ({
+        ...s,
+        day_code: normalizeDay(s.day || s.day_code),
         dept_code: 'SE',
-        level: currentLevel,
         is_ai_generated: true,
-        student_group: currentSchedule.id || 1
-      });
+        student_group: currentSchedule.id,
+        course_id: Number(s.course_id)
+    }));
 
-      console.log(`✅ ${course.name}: ${day} ${section.start_time}-${section.end_time} (${duration}h)`);
-    });
-
-    // ============================================
-    // 9️⃣ التحقق من اكتمال الساعات
-    // ============================================
-    levelCourses.forEach(course => {
-      const scheduled = courseHoursMap[course.course_id] || 0;
-      const required = course.credit;
-
-      if (scheduled < required) {
-        validationErrors.push({
-          section: course.name,
-          errors: [`Incomplete: Only ${scheduled}h scheduled (needs ${required}h)`]
-        });
-      } else if (scheduled > required) {
-        validationErrors.push({
-          section: course.name,
-          errors: [`Exceeded: ${scheduled}h scheduled (needs only ${required}h)`]
-        });
-      }
-    });
-
-    // ============================================
-    // 🔟 النتيجة النهائية
-    // ============================================
-    if (validationErrors.length > 0) {
-      console.error('❌ Validation failed:', validationErrors);
-
-      return res.status(400).json({
-        error: 'Schedule validation failed',
-        validation_errors: validationErrors,
-        partial_schedule: validatedSections,
-        stats: {
-          total_sections: scheduleArray.length,
-          valid_sections: validatedSections.length,
-          errors: validationErrors.length
-        }
-      });
-    }
-
-    // دمج مع المواد المثبتة
-    const finalSchedule = [...fixedSections, ...validatedSections];
-
-    console.log('✅ SUCCESS! Schedule validated completely');
-
-    res.json({
-      success: true,
-      message: 'Schedule generated and validated successfully',
-      schedule: finalSchedule,
-      stats: {
-        level: currentLevel,
-        courses_scheduled: levelCourses.length,
-        total_sections: validatedSections.length,
-        total_hours: Object.values(courseHoursMap).reduce((a, b) => a + b, 0),
-        available_slots: AVAILABLE_SLOTS.length,
-        used_slots: usedSlots.size,
-        rules_applied: rules.length
-      }
-    });
+    res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "AI missed some courses." : null });
 
   } catch (error) {
-    console.error('💥 Server Error:', error);
-    res.status(500).json({
-      error: 'Server error during schedule generation',
-      details: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    console.error('AI Error:', error);
+    res.status(500).json({ error: 'Failed to generate schedule. AI Error.' });
   } finally {
     client.release();
   }
