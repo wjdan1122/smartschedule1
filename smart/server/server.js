@@ -15,7 +15,12 @@ const WebSocket = require('ws');
 const { setupWSConnection } = require('y-websocket/bin/utils');
 // ?? ??????? ????? ?????????
 const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 require('dotenv').config();
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+const RESET_FROM = process.env.RESET_EMAIL_FROM || process.env.EMAIL_USER;
+const RESET_BASE_URL = process.env.RESET_BASE_URL || 'https://smartschedule1-three.vercel.app';
 
 // ? Phase 1: Import validation and authentication middleware
 const {
@@ -221,17 +226,35 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     await client.query('UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE email = $3', [resetToken, expireDate, email]);
 
-    // ???? ?????? ?? Netlify
-    const resetLink = `https://endearing-kulfi-c96605.netlify.app/reset-password?token=${resetToken}`;
+    const resetLink = `${RESET_BASE_URL}/reset-password?token=${resetToken}`;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'SmartSchedule - Reset Password',
-      html: `<p>You requested a password reset.</p><p>Click here to reset: <a href="${resetLink}">Reset Password</a></p>`
-    };
+    const htmlBody = `<p>You requested a password reset.</p><p>Click here to reset: <a href="${resetLink}">Reset Password</a></p>`;
 
-    await transporter.sendMail(mailOptions);
+    let sent = false;
+
+    if (process.env.RESEND_API_KEY) {
+      try {
+        await resend.emails.send({
+          from: RESET_FROM,
+          to: email,
+          subject: 'SmartSchedule - Reset Password',
+          html: htmlBody
+        });
+        sent = true;
+      } catch (err) {
+        console.error('Resend send error:', err);
+      }
+    }
+
+    if (!sent) {
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'SmartSchedule - Reset Password',
+        html: htmlBody
+      };
+      await transporter.sendMail(mailOptions);
+    }
     res.json({ success: true, message: 'Email sent successfully' });
 
   } catch (error) {
