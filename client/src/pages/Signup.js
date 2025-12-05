@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, Spinner } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { authAPI } from '../services/api';
@@ -15,9 +15,22 @@ function Signup() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const validateEmail = (email) => {
-    return email.endsWith('@student.ksu.edu.sa') || email.endsWith('@ksu.edu.sa');
+  const STUDENT_DOMAIN = '@student.ksu.edu.sa';
+  const STAFF_DOMAIN = '@ksu.edu.sa';
+
+  const validateEmail = (email) => /\S+@\S+\.\S+/.test(email);
+
+  const getEmailType = (email) => {
+    const normalized = (email || '').trim().toLowerCase();
+    if (normalized.endsWith(STUDENT_DOMAIN)) return 'student';
+    if (normalized.endsWith(STAFF_DOMAIN)) return 'staff';
+    if (validateEmail(normalized)) return 'generic';
+    return 'invalid';
   };
+
+  const emailType = getEmailType(formData.email);
+  const roleDisabled = emailType !== 'staff';
+  const roleRequired = emailType === 'staff';
 
   const handleChange = (e) => {
     setFormData({
@@ -25,6 +38,17 @@ function Signup() {
       [e.target.name]: e.target.value
     });
   };
+
+  useEffect(() => {
+    // أي إيميل غير جامعي أو إيميل طالب: ثبت الدور على Student وأغلق القائمة
+    if ((emailType === 'student' || emailType === 'generic') && formData.role !== 'student') {
+      setFormData((prev) => ({ ...prev, role: 'student' }));
+    }
+    // إيميل جامعي للطاقم: افتح الاختيار وأفرغ الدور ليتم اختياره
+    if (emailType === 'staff' && formData.role === 'student') {
+      setFormData((prev) => ({ ...prev, role: '' }));
+    }
+  }, [emailType, formData.role]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -43,9 +67,12 @@ function Signup() {
 
     if (!validateEmail(formData.email)) {
       console.log('ERROR: Invalid email format');
-      setError('Please enter a valid KSU university email address');
+      setError('Please enter a valid email address');
       return;
     }
+
+    const isStudentType = emailType === 'student' || emailType === 'generic';
+    const isStaff = emailType === 'staff';
 
     if (formData.password.length < 6) {
       console.log('ERROR: Password too short');
@@ -53,10 +80,9 @@ function Signup() {
       return;
     }
 
-    const isStudent = formData.email.endsWith('@student.ksu.edu.sa');
-    console.log('Is Student:', isStudent);
+    console.log('Email type:', emailType);
 
-    if (!isStudent && !formData.role) {
+    if (isStaff && !formData.role) {
       console.log('ERROR: No role selected for staff');
       setError('Please select a role');
       return;
@@ -65,7 +91,7 @@ function Signup() {
     setLoading(true);
 
     try {
-      if (isStudent) {
+      if (isStudentType) {
         console.log('Attempting STUDENT registration...');
         const requestData = {
           name: formData.name,
@@ -146,14 +172,14 @@ function Signup() {
                     <Form.Control
                       type="email"
                       name="email"
-                      placeholder="######@student.ksu.edu.sa or @ksu.edu.sa"
+                      placeholder="your email (student or university)"
                       value={formData.email}
                       onChange={handleChange}
                       required
                       disabled={loading}
                     />
                     <Form.Text className="text-muted">
-                      Use @student.ksu.edu.sa for students, @ksu.edu.sa for staff
+                      Students: any email or @student.ksu.edu.sa — Staff: use @ksu.edu.sa
                     </Form.Text>
                   </Form.Group>
 
@@ -176,8 +202,8 @@ function Signup() {
                       name="role"
                       value={formData.role}
                       onChange={handleChange}
-                      required={!formData.email.endsWith('@student.ksu.edu.sa')}
-                      disabled={loading || formData.email.endsWith('@student.ksu.edu.sa')}
+                      required={roleRequired}
+                      disabled={loading || roleDisabled}
                     >
                       <option value="">Select your role</option>
                       <option value="register">Registrar</option>
@@ -185,7 +211,7 @@ function Signup() {
                       <option value="load committee">Load Committee</option>
                       <option value="schedule">Scheduler</option>
                     </Form.Select>
-                    {formData.email.endsWith('@student.ksu.edu.sa') && (
+                    {roleDisabled && (
                       <Form.Text className="text-muted">
                         Student role will be assigned automatically
                       </Form.Text>

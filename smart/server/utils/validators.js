@@ -33,7 +33,7 @@ const validateKSUEmail = (email) => {
         return { isValid: true, type: 'staff', email: trimmedEmail };
     }
 
-    // Fallback: accept any other valid email as generic
+    // Fallback: قبول أي بريد صالح لبريد خاص ويُعامل كطالب
     return { isValid: true, type: 'generic', email: trimmedEmail };
 };
 
