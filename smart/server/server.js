@@ -875,10 +875,12 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
     const occupiedMap = {};
     fixedSections.forEach((section) => {
-      const startHour = parseInt(section.start_time.split(':')[0]);
-      const endHour = parseInt(section.end_time.split(':')[0]);
+      const dayCode = normalizeDay(section.day_code);
+      if (!dayCode) return;
+      const startHour = parseInt(section.start_time.split(':')[0], 10);
+      const endHour = parseInt(section.end_time.split(':')[0], 10);
       for (let h = startHour; h < endHour; h++) {
-        occupiedMap[`${section.day_code}-${h}`] = true;
+        occupiedMap[`${dayCode}-${h}`] = true;
       }
     });
 
@@ -1045,6 +1047,89 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     const managedSections = currentSections.filter(sec => managedCourseIds.has(Number(sec.course_id)));
     const fixedSections = currentSections.filter(sec => !managedCourseIds.has(Number(sec.course_id)));
 
+    const normalizeDay = (value) => {
+      if (!value && value !== 0) return null;
+      const token = String(value).trim().toUpperCase();
+      if (!token) return null;
+      if (['S', 'SUN', 'SUNDAY', 'SU'].includes(token) || token.startsWith('SU')) return 'S';
+      if (['M', 'MON', 'MONDAY'].includes(token) || token.startsWith('MON')) return 'M';
+      if (['T', 'TU', 'TUE', 'TUES', 'TUESDAY'].includes(token) || token.startsWith('TU')) return 'T';
+      if (['W', 'WED', 'WEDS', 'WEDNESDAY'].includes(token) || token.startsWith('WE')) return 'W';
+      if (['H', 'TH', 'THU', 'THUR', 'THURS', 'THURSDAY'].includes(token) || token.startsWith('TH')) return 'H';
+      const first = token.charAt(0);
+      return ['S', 'M', 'T', 'W', 'H'].includes(first) ? first : null;
+    };
+
+    const ensureHHMM = (value) => {
+      if (!value && value !== 0) return null;
+      const match = String(value).trim().match(/^(\d{1,2})(?::(\d{1,2}))?/);
+      if (!match) return null;
+      const hour = Math.min(23, Math.max(0, parseInt(match[1], 10)));
+      const minute = match[2] ? Math.min(59, Math.max(0, parseInt(match[2], 10))) : 0;
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    };
+
+    const parseTimeRange = (rangeValue) => {
+      if (!rangeValue) return {};
+      const parts = String(rangeValue).split('-');
+      if (parts.length !== 2) return {};
+      const start = ensureHHMM(parts[0]);
+      const end = ensureHHMM(parts[1]);
+      if (!start || !end) return {};
+      return { start_time: start, end_time: end };
+    };
+
+    const extractTimes = (section) => {
+      const rangeTimes = parseTimeRange(section.time);
+      const start = ensureHHMM(section.start_time || section.start || rangeTimes.start_time);
+      const end = ensureHHMM(section.end_time || section.end || rangeTimes.end_time);
+      if (!start || !end) return null;
+      return { start_time: start, end_time: end };
+    };
+
+    const updatedManagedSections = managedSections.map(section => ({ ...section }));
+
+    const upsertManagedSection = (sectionData = {}) => {
+      const courseId = Number(sectionData.course_id);
+      if (!courseId) return;
+      const meta = courseMetaMap.get(courseId) || {};
+      const normalizedType = String(sectionData.section_type || 'LECTURE').toUpperCase();
+      const matchIndex = updatedManagedSections.findIndex(existing =>
+        Number(existing.course_id) === courseId &&
+        String(existing.section_type || 'LECTURE').toUpperCase() === normalizedType
+      );
+      const previous = matchIndex === -1 ? null : updatedManagedSections[matchIndex];
+      const normalizedDay = normalizeDay(sectionData.day || sectionData.day_code || previous?.day_code);
+      const times = extractTimes(sectionData) || (previous ? { start_time: previous.start_time, end_time: previous.end_time } : null);
+      if (!times || !normalizedDay) return;
+
+      const baseData = {
+        course_id: courseId,
+        course_name: sectionData.course_name || meta.name || previous?.course_name,
+        dept_code: meta.dept_code || sectionData.dept_code || previous?.dept_code || 'SE',
+        credit: meta.credit ?? sectionData.credit ?? previous?.credit ?? 1,
+        day_code: normalizedDay,
+        start_time: times.start_time,
+        end_time: times.end_time,
+        section_type: normalizedType,
+        is_ai_generated: true,
+        student_group: currentSchedule.id,
+        is_forced: Boolean(sectionData.is_forced)
+      };
+
+      if (matchIndex === -1) {
+        updatedManagedSections.push(baseData);
+      } else {
+        const prev = updatedManagedSections[matchIndex];
+        updatedManagedSections[matchIndex] = {
+          ...prev,
+          ...baseData,
+          id: prev.id,
+          section_id: prev.section_id
+        };
+      }
+    };
+
     const occupiedMap = {};
     fixedSections.forEach((section) => {
       const startHour = parseInt(section.start_time.split(':')[0]);
@@ -1157,7 +1242,6 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       return !scheduledIds.has(id) && !existingManagedIds.has(id);
     });
 
-    const normalizeDay = (d) => ({ 'SUN': 'S', 'MON': 'M', 'TUE': 'T', 'WED': 'W', 'THU': 'H', 'TH': 'H' }[String(d).toUpperCase()] || String(d).toUpperCase());
     const slotKey = (day, hour) => `${day}-${hour}`;
     const toHour = (value) => {
       if (!value) return null;
@@ -1185,12 +1269,15 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       markOccupiedRange(fallbackOccupied, section.day || section.day_code, section.start_time, section.end_time);
     });
 
-    const findFallbackSlot = (creditHours = 1) => {
+    const hourToTime = (hour) => `${String(hour).padStart(2, '0')}:00`;
+    const findFallbackSlot = (blockHours = 1) => {
+      const safeBlock = Math.max(1, blockHours);
       for (const day of days) {
         for (const hour of hours) {
+          if (hour + safeBlock > 15) continue;
           if (avoidLunch && hour === 12) continue;
           let canUse = true;
-          for (let h = hour; h < hour + creditHours; h++) {
+          for (let h = hour; h < hour + safeBlock; h++) {
             if (avoidLunch && h === 12) { canUse = false; break; }
             if (fallbackOccupied.has(slotKey(day, h))) {
               canUse = false;
@@ -1198,12 +1285,10 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
             }
           }
           if (canUse) {
-            for (let h = hour; h < hour + creditHours; h++) {
+            for (let h = hour; h < hour + safeBlock; h++) {
               fallbackOccupied.add(slotKey(day, h));
             }
-            const start_time = `${String(hour).padStart(2, '0')}:00`;
-            const end_time = `${String(hour + creditHours).padStart(2, '0')}:00`;
-            return { day, start_time, end_time };
+            return { day, startHour: hour, start_time: hourToTime(hour), end_time: hourToTime(hour + safeBlock) };
           }
         }
       }
@@ -1213,57 +1298,37 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     if (missingCourses.length > 0) {
       console.warn('?? AI missed courses. Forcing...', missingCourses.map(c => c.name));
       missingCourses.forEach(c => {
-        const slot = findFallbackSlot(c.credit || 1);
-        const fallbackDay = slot?.day || 'S';
-        const fallbackStart = slot?.start_time || '08:00';
-        const fallbackEnd = slot?.end_time || `${String((parseInt(fallbackStart.split(':')[0], 10) || 8) + (c.credit || 1)).padStart(2, '0')}:00`;
-        if (!slot) {
-          const startHour = parseInt(fallbackStart.split(':')[0], 10) || 8;
-          for (let h = startHour; h < startHour + (c.credit || 1); h++) {
-            fallbackOccupied.add(slotKey(fallbackDay, h));
+        const meta = courseMetaMap.get(Number(c.course_id)) || {};
+        const totalHours = Math.max(1, Number(meta.credit) || 1);
+        let remaining = totalHours;
+        while (remaining > 0) {
+          const chunkHours = meta.is_elective ? Math.min(2, remaining) : remaining;
+          const slot = findFallbackSlot(chunkHours);
+          const fallbackDay = slot?.day || 'S';
+          const startHour = slot?.startHour ?? 8;
+          const fallbackStart = slot?.start_time || hourToTime(startHour);
+          const fallbackEnd = slot?.end_time || hourToTime(startHour + chunkHours);
+          if (!slot) {
+            for (let h = startHour; h < startHour + chunkHours; h++) {
+              fallbackOccupied.add(slotKey(fallbackDay, h));
+            }
           }
+          scheduleArray.push({
+            course_id: c.course_id,
+            day: fallbackDay,
+            start_time: fallbackStart,
+            end_time: fallbackEnd,
+            section_type: "LECTURE",
+            is_forced: true
+          });
+          remaining -= chunkHours;
         }
-        scheduleArray.push({
-          course_id: c.course_id,
-          day: fallbackDay,
-          start_time: fallbackStart,
-          end_time: fallbackEnd,
-          section_type: "LECTURE",
-          is_forced: true
-        });
       });
     }
 
-    const managedSectionMap = new Map();
-    managedSections.forEach(section => {
-      managedSectionMap.set(Number(section.course_id), { ...section });
-    });
-    scheduleArray.forEach(s => {
-      const courseId = Number(s.course_id);
-      if (!courseId) return;
-      const dayCode = normalizeDay(s.day || s.day_code);
-      const startTime = s.start_time || s.start;
-      const endTime = s.end_time || s.end;
-      if (!dayCode || !startTime || !endTime) return;
-      const meta = courseMetaMap.get(courseId) || {};
-      const previous = managedSectionMap.get(courseId) || {};
-      managedSectionMap.set(courseId, {
-        ...previous,
-        ...s,
-        course_id: courseId,
-        course_name: s.course_name || meta.name || previous.course_name,
-        dept_code: meta.dept_code || s.dept_code || previous.dept_code || 'SE',
-        credit: meta.credit ?? s.credit ?? previous.credit,
-        day_code: dayCode,
-        start_time: startTime,
-        end_time: endTime,
-        section_type: s.section_type || previous.section_type || 'LECTURE',
-        is_ai_generated: true,
-        student_group: currentSchedule.id
-      });
-    });
+    scheduleArray.forEach(section => upsertManagedSection(section));
 
-    const mergedSchedule = [...fixedSections, ...Array.from(managedSectionMap.values())];
+    const mergedSchedule = [...fixedSections, ...updatedManagedSections];
 
     res.json({ success: true, schedule: mergedSchedule, warning: missingCourses.length > 0 ? "Some courses were auto-added." : null });
 
