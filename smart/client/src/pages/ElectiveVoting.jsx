@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Container, Row, Col, Card, Navbar, Nav, Button, Spinner, Alert, Badge, Form } from 'react-bootstrap';
-import { FaBook, FaCalendarAlt, FaVoteYea, FaHome, FaSignOutAlt, FaCheckCircle } from 'react-icons/fa';
+import { FaBook, FaCalendarAlt, FaVoteYea, FaHome, FaSignOutAlt, FaCheckCircle, FaUserCircle } from 'react-icons/fa';
 import '../App.css';
 
-// Generic fetchData function
+// Generic fetchData function (Remains unchanged)
 const fetchData = async (url, method = 'GET', body = null) => {
     const token = localStorage.getItem('token');
     const options = {
@@ -33,7 +33,7 @@ function ElectiveVoting() {
     const [error, setError] = useState(null);
     const navigate = useNavigate();
 
-    // --- NEW: State to manage selections in real-time ---
+    // --- State to manage selections in real-time ---
     const [selections, setSelections] = useState({});
 
     const loadPageData = useCallback(async () => {
@@ -46,20 +46,22 @@ function ElectiveVoting() {
             setStudentId(user.id);
             setUserInfo({ name: user.name || 'Student', email: user.email || '' });
 
-            // 👇 تم تحديث الرابط هنا
+            // Fetch existing votes (URLs kept as in the original code)
             const existingVotes = await fetchData(`https://smartschedule1-b64l.onrender.com/api/votes/student/${user.id}`);
             if (existingVotes.length > 0) {
                 setSubmitted(true);
                 return;
             }
 
-            // 👇 تم تحديث الرابط هنا
+            // Fetch electives data
             const electivesData = await fetchData("https://smartschedule1-b64l.onrender.com/api/courses/elective");
             setElectives(electivesData);
+            
             // Initialize selections state
             const initialSelections = {};
             electivesData.forEach(course => {
-                initialSelections[course.course_id] = "";
+                const existingVote = existingVotes.find(v => v.course_id === course.course_id);
+                initialSelections[course.course_id] = existingVote ? String(existingVote.vote_value) : "";
             });
             setSelections(initialSelections);
 
@@ -75,7 +77,7 @@ function ElectiveVoting() {
         loadPageData();
     }, [loadPageData]);
 
-    // --- NEW: Function to handle dropdown changes ---
+    // --- Function to handle dropdown changes ---
     const handleSelectionChange = (courseId, priority) => {
         setSelections(prev => ({
             ...prev,
@@ -104,7 +106,6 @@ function ElectiveVoting() {
 
         try {
             for (const vote of selected) {
-                // 👇 تم تحديث الرابط هنا
                 await fetchData("https://smartschedule1-b64l.onrender.com/api/vote", "POST", {
                     student_id: studentId,
                     course_id: vote.course_id,
@@ -123,89 +124,142 @@ function ElectiveVoting() {
         navigate('/login');
     };
 
-    // Get a list of priorities that are already in use
+    // Get a list of priorities that are already in use (Smart UI Logic)
     const usedPriorities = Object.values(selections).filter(p => p);
 
     return (
         <div className="dashboard-page">
-            <Container fluid="lg" className="container-custom shadow-lg">
-                <Navbar expand="lg" variant="dark" className="navbar-custom p-3">
-                    {/* ... Navbar content ... */}
+            <Container fluid className="p-0">
+                {/* ==========================================================
+                ✅ ADJUSTED NAVBAR FOR CONSISTENT DASHBOARD DESIGN
+                ========================================================== 
+                */}
+                <Navbar expand="lg" variant="dark" className="navbar-custom shadow-sm py-3">
+                    <Container fluid="lg">
+                        <Navbar.Brand className="fw-bold d-flex align-items-center">
+                            <FaVoteYea className="me-2" style={{ fontSize: '1.5rem' }} />
+                            SmartSchedule
+                        </Navbar.Brand>
+                        <Navbar.Toggle aria-controls="basic-navbar-nav" />
+                        <Navbar.Collapse id="basic-navbar-nav">
+                            <Nav className="me-auto">
+                                <Nav.Link onClick={() => navigate('/student-dashboard')} className="fw-medium">
+                                    <FaHome className="me-1" /> Dashboard
+                                </Nav.Link>
+                                <Nav.Link onClick={() => navigate('/student-schedule')} className="fw-medium">
+                                    <FaCalendarAlt className="me-1" /> Schedule
+                                </Nav.Link>
+                                <Nav.Link active className="fw-bold text-white">
+                                    <FaVoteYea className="me-1" /> Elective Voting
+                                </Nav.Link>
+                            </Nav>
+                            <Nav>
+                                <Nav.Link className="text-white d-flex align-items-center me-3">
+                                    <FaUserCircle className="me-2" style={{ fontSize: '1.2rem' }} />
+                                    <span className="fw-medium">{userInfo.name}</span>
+                                </Nav.Link>
+                                <Button variant="outline-light" onClick={handleLogout} className="fw-bold">
+                                    <FaSignOutAlt className="me-2" /> Logout
+                                </Button>
+                            </Nav>
+                        </Navbar.Collapse>
+                    </Container>
                 </Navbar>
 
-                <main className="main-content p-4 p-md-5">
-                    <header className="welcome-section text-center mb-5">
-                        <h2 className="text-dark fw-bolder mb-3">Elective Course Voting</h2>
-                        <p className="text-secondary fs-6">
-                            Rank your preferred elective courses by priority (1 = Most Preferred).
-                        </p>
-                        {error && <Alert variant="danger" className="mt-3"><strong>Error:</strong> {error}</Alert>}
-                    </header>
+                {/* ==========================================================
+                ✅ MAIN CONTENT AREA (Padded and Centered)
+                ========================================================== 
+                */}
+                <Container fluid="lg" className="py-5">
+                    <Row className="justify-content-center">
+                        <Col lg={10} xl={8}>
+                            
+                            <Card className="shadow-lg border-0">
+                                <Card.Header className="bg-primary text-white p-4">
+                                    <h3 className="mb-1 fw-bolder">Elective Course Voting</h3>
+                                    <p className="mb-0 fs-6">
+                                        Rank your preferred elective courses by priority (1, 2, 3).
+                                    </p>
+                                </Card.Header>
+                                <Card.Body className="p-4 p-md-5">
 
-                    <section className="bg-white rounded-4 p-4 p-md-5 shadow-sm">
-                        {loading ? (
-                            <div className="text-center py-5"><Spinner /><p className="mt-3 text-muted">Loading voting session...</p></div>
-                        ) : !submitted ? (
-                            <>
-                                <Alert variant="info" className="mb-4">
-                                    <strong>ℹ️ Instructions:</strong> Assign a unique <strong>priority number</strong> (1, 2, or 3) to up to <strong>3 courses</strong>.
-                                </Alert>
-                                <Form onSubmit={handleSubmit}>
-                                    <Row as="ul" className="list-unstyled g-3">
-                                        {electives.map(course => (
-                                            <Col as="li" key={course.course_id} xs={12}>
-                                                <Card className="border-2 shadow-sm notification-item-custom">
-                                                    <Card.Body className="p-4">
-                                                        <Row className="align-items-center">
-                                                            <Col md={8}>
-                                                                <h5 className="fw-bold text-dark mb-2">{course.name}</h5>
-                                                                <Badge bg="secondary">{course.credit} Credits</Badge>
-                                                            </Col>
-                                                            <Col md={4} className="mt-3 mt-md-0">
-                                                                <Form.Select
-                                                                    className="form-select-lg"
-                                                                    value={selections[course.course_id]}
-                                                                    onChange={(e) => handleSelectionChange(course.course_id, e.target.value)}
-                                                                >
-                                                                    <option value="">-- Select Priority --</option>
-                                                                    {[1, 2, 3].map(p => (
-                                                                        <option
-                                                                            key={p}
-                                                                            value={p}
-                                                                            // --- THIS IS THE SMART LOGIC ---
-                                                                            // Disable if this priority is used by another course
-                                                                            disabled={usedPriorities.includes(String(p)) && selections[course.course_id] !== String(p)}
-                                                                        >
-                                                                            Priority {p} {p === 1 ? '(Most Preferred)' : ''}
-                                                                        </option>
-                                                                    ))}
-                                                                </Form.Select>
-                                                            </Col>
-                                                        </Row>
-                                                    </Card.Body>
-                                                </Card>
-                                            </Col>
-                                        ))}
-                                    </Row>
-                                    <div className="d-grid mt-4">
-                                        <Button type="submit" size="lg" className="vote-btn-custom fw-bold py-3">
-                                            <FaCheckCircle className="me-2" /> Submit My Priorities
-                                        </Button>
-                                    </div>
-                                </Form>
-                            </>
-                        ) : (
-                            <div className="text-center py-5">
-                                <div style={{ fontSize: '5rem', color: '#28a745' }}><FaCheckCircle /></div>
-                                <h3 className="text-success fw-bold mt-4 mb-3">Thank You for Voting!</h3>
-                                <p className="text-muted fs-5 mb-4">Your preferences have been submitted and can no longer be changed.</p>
-                                <Button size="lg" className="vote-btn-custom fw-bold" onClick={() => navigate('/student-dashboard')}>
-                                    <FaHome className="me-2" /> Return to Dashboard
-                                </Button>
-                            </div>
-                        )}
-                    </section>
-                </main>
+                                    {error && <Alert variant="danger" className="mt-3"><strong>Error:</strong> {error}</Alert>}
+
+                                    {loading ? (
+                                        <div className="text-center py-5"><Spinner animation="border" /><p className="mt-3 text-muted">Loading voting session...</p></div>
+                                    ) : !submitted ? (
+                                        <>
+                                            <Alert variant="info" className="mb-4 d-flex align-items-center">
+                                                <FaBook style={{ fontSize: '1.5rem', marginRight: '10px' }}/>
+                                                <div>
+                                                    <strong>Instructions:</strong> Assign a **unique priority number** (1, 2, or 3) to up to **3 courses**.
+                                                </div>
+                                            </Alert>
+                                            
+                                            <Form onSubmit={handleSubmit}>
+                                                <Row as="ul" className="list-unstyled g-3">
+                                                    {electives.map(course => (
+                                                        <Col as="li" key={course.course_id} xs={12}>
+                                                            <Card className="border-2 shadow-sm notification-item-custom">
+                                                                <Card.Body className="p-4">
+                                                                    <Row className="align-items-center">
+                                                                        <Col md={7}>
+                                                                            <h5 className="fw-bold text-dark mb-1">{course.name}</h5>
+                                                                            <p className="text-muted mb-0">Code: {course.dept_code}-{course.course_id}</p>
+                                                                            <Badge bg="secondary" className="mt-2">{course.credit} Credits</Badge>
+                                                                        </Col>
+                                                                        <Col md={5} className="mt-3 mt-md-0">
+                                                                            <Form.Select
+                                                                                className="form-select-lg"
+                                                                                value={selections[course.course_id]}
+                                                                                onChange={(e) => handleSelectionChange(course.course_id, e.target.value)}
+                                                                            >
+                                                                                <option value="">-- Select Priority --</option>
+                                                                                {[1, 2, 3].map(p => (
+                                                                                    <option
+                                                                                        key={p}
+                                                                                        value={p}
+                                                                                        // Disable if this priority is used by another course
+                                                                                        disabled={usedPriorities.includes(String(p)) && selections[course.course_id] !== String(p)}
+                                                                                    >
+                                                                                        Priority {p} {p === 1 ? '(Most Preferred)' : ''}
+                                                                                    </option>
+                                                                                ))}
+                                                                            </Form.Select>
+                                                                        </Col>
+                                                                    </Row>
+                                                                </Card.Body>
+                                                            </Card>
+                                                        </Col>
+                                                    ))}
+                                                </Row>
+                                                <div className="d-grid mt-4">
+                                                    <Button 
+                                                        type="submit" 
+                                                        size="lg" 
+                                                        className="vote-btn-custom fw-bold py-3"
+                                                        disabled={usedPriorities.length === 0} // Disable if nothing is selected
+                                                    >
+                                                        <FaCheckCircle className="me-2" /> Submit My Priorities ({usedPriorities.length} selected)
+                                                    </Button>
+                                                </div>
+                                            </Form>
+                                        </>
+                                    ) : (
+                                        <div className="text-center py-5">
+                                            <div style={{ fontSize: '5rem', color: '#28a745' }}><FaCheckCircle /></div>
+                                            <h3 className="text-success fw-bold mt-4 mb-3">Thank You for Voting!</h3>
+                                            <p className="text-muted fs-5 mb-4">Your preferences have been submitted and can no longer be changed.</p>
+                                            <Button size="lg" className="vote-btn-custom fw-bold" onClick={() => navigate('/student-dashboard')}>
+                                                <FaHome className="me-2" /> Return to Dashboard
+                                            </Button>
+                                        </div>
+                                    )}
+                                </Card.Body>
+                            </Card>
+                        </Col>
+                    </Row>
+                </Container>
             </Container>
         </div>
     );
