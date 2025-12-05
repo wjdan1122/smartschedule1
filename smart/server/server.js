@@ -21,6 +21,35 @@ require('dotenv').config();
 const resend = new Resend(process.env.RESEND_API_KEY);
 const RESET_FROM = process.env.RESET_EMAIL_FROM || process.env.EMAIL_USER;
 const RESET_BASE_URL = process.env.RESET_BASE_URL || 'https://smartschedule1-three.vercel.app';
+const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
+const EMAILJS_PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
+const EMAILJS_PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY;
+
+const canUseEmailJS = () =>
+  Boolean(EMAILJS_SERVICE_ID && EMAILJS_TEMPLATE_ID && EMAILJS_PUBLIC_KEY && EMAILJS_PRIVATE_KEY);
+
+const sendResetWithEmailJS = async ({ to, resetLink }) => {
+  const payload = {
+    service_id: EMAILJS_SERVICE_ID,
+    template_id: EMAILJS_TEMPLATE_ID,
+    user_id: EMAILJS_PUBLIC_KEY,
+    accessToken: EMAILJS_PRIVATE_KEY,
+    template_params: {
+      to_email: to,
+      reset_link: resetLink,
+    },
+  };
+  const resp = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(`EmailJS send failed: ${resp.status} ${body}`);
+  }
+};
 
 // ? Phase 1: Import validation and authentication middleware
 const {
@@ -232,6 +261,17 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     let sent = false;
 
+    // Try EmailJS first if configured
+    if (canUseEmailJS()) {
+      try {
+        await sendResetWithEmailJS({ to: email, resetLink });
+        sent = true;
+      } catch (err) {
+        console.error('EmailJS send error:', err);
+      }
+    }
+
+    // Fallback to Resend
     if (process.env.RESEND_API_KEY) {
       try {
         await resend.emails.send({
