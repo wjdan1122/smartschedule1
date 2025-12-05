@@ -151,9 +151,12 @@ const validateRole = (role, emailType) => {
         };
     }
 
-    // For generic emails, honor the requested role if allowed
+    // Generic email: نسمح فقط بدور الطالب، وبخلافه نطلب إيميل جامعي
     if (emailType === 'generic') {
-        return { isValid: true, sanitized: trimmed };
+        if (trimmed !== 'student') {
+            return { isValid: false, error: 'Non-KSU emails can only register as students.' };
+        }
+        return { isValid: true, sanitized: 'student' };
     }
 
     // Students can only have 'student' role

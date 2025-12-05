@@ -75,16 +75,10 @@ const validateStudentRegistration = (req, res, next) => {
         return res.status(401).json({ error: committeeCheck.error });
     }
 
-    // 2. Validate email (must be student email)
+    // 2. Validate email (students can use any valid email)
     const emailCheck = validateKSUEmail(email);
     if (!emailCheck.isValid) {
         return res.status(400).json({ error: emailCheck.error });
-    }
-
-    if (emailCheck.type !== 'student') {
-        return res.status(400).json({
-            error: 'Student registration requires a student email (9 digits@student.ksu.edu.sa)'
-        });
     }
 
     // 3. Validate password
