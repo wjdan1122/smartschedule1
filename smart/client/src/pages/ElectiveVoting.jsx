@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Container, Row, Col, Card, Navbar, Nav, Button, Spinner, Alert, Badge, Form } from 'react-bootstrap';
-import { FaBook, FaCalendarAlt, FaVoteYea, FaHome, FaSignOutAlt, FaCheckCircle, FaUserCircle } from 'react-icons/fa';
+// تم تعديل الأيقونات لتتوافق مع ملف StudentDashboard
+import { FaUserGraduate, FaBook, FaCalendarAlt, FaVoteYea, FaHome, FaSignOutAlt, FaChartLine, FaSave, FaComment, FaArrowCircleRight, FaPaperPlane, FaUserCircle } from 'react-icons/fa';
 import '../App.css';
 
 // Generic fetchData function (Remains unchanged)
@@ -44,7 +45,12 @@ function ElectiveVoting() {
             if (!userStr) { navigate('/login'); return; }
             const user = JSON.parse(userStr);
             setStudentId(user.id);
-            setUserInfo({ name: user.name || 'Student', email: user.email || '' });
+            // تم تعديل هذا الجزء ليتطابق مع ما يتم تخزينه في ملف StudentDashboard
+            setUserInfo({ 
+                name: user.name || 'Student', 
+                email: user.email || '',
+                level: user.level 
+            });
 
             // Fetch existing votes (URLs kept as in the original code)
             const existingVotes = await fetchData(`https://smartschedule1-b64l.onrender.com/api/votes/student/${user.id}`);
@@ -120,8 +126,10 @@ function ElectiveVoting() {
     };
 
     const handleLogout = () => {
-        localStorage.clear();
-        navigate('/login');
+        if (window.confirm('Are you sure you want to logout?')) {
+            localStorage.clear();
+            navigate('/login');
+        }
     };
 
     // Get a list of priorities that are already in use (Smart UI Logic)
@@ -129,54 +137,43 @@ function ElectiveVoting() {
 
     return (
         <div className="dashboard-page">
-            <Container fluid className="p-0">
+            <Container fluid="lg" className="container-custom shadow-lg p-0">
                 {/* ==========================================================
-                ✅ ADJUSTED NAVBAR FOR CONSISTENT DASHBOARD DESIGN
+                ✅ شريط التنقل الموحد (Unified Navbar)
                 ========================================================== 
                 */}
-                <Navbar expand="lg" variant="dark" className="navbar-custom shadow-sm py-3">
-                    <Container fluid="lg">
-                        <Navbar.Brand className="fw-bold d-flex align-items-center">
-                            <FaVoteYea className="me-2" style={{ fontSize: '1.5rem' }} />
-                            SmartSchedule
-                        </Navbar.Brand>
-                        <Navbar.Toggle aria-controls="basic-navbar-nav" />
-                        <Navbar.Collapse id="basic-navbar-nav">
-                            <Nav className="me-auto">
-                                <Nav.Link onClick={() => navigate('/student-dashboard')} className="fw-medium">
-                                    <FaHome className="me-1" /> Dashboard
-                                </Nav.Link>
-                                <Nav.Link onClick={() => navigate('/student-schedule')} className="fw-medium">
-                                    <FaCalendarAlt className="me-1" /> Schedule
-                                </Nav.Link>
-                                <Nav.Link active className="fw-bold text-white">
-                                    <FaVoteYea className="me-1" /> Elective Voting
-                                </Nav.Link>
-                            </Nav>
-                            <Nav>
-                                <Nav.Link className="text-white d-flex align-items-center me-3">
-                                    <FaUserCircle className="me-2" style={{ fontSize: '1.2rem' }} />
-                                    <span className="fw-medium">{userInfo.name}</span>
-                                </Nav.Link>
-                                <Button variant="outline-light" onClick={handleLogout} className="fw-bold">
-                                    <FaSignOutAlt className="me-2" /> Logout
-                                </Button>
-                            </Nav>
-                        </Navbar.Collapse>
-                    </Container>
+                <Navbar expand="lg" variant="dark" className="navbar-custom p-3">
+                    <Navbar.Brand className="fw-bold fs-5">STUDENT DASHBOARD</Navbar.Brand>
+                    <Navbar.Toggle aria-controls="basic-navbar-nav" />
+                    <Navbar.Collapse id="basic-navbar-nav">
+                        <Nav className="me-auto my-2 my-lg-0 nav-menu">
+                            <Nav.Link onClick={() => navigate('/student-dashboard')} className="nav-link-custom"><FaHome className="me-2" /> DASHBOARD</Nav.Link>
+                            {/* تم تعيين هذا الرابط كنشط */}
+                            <Nav.Link onClick={() => navigate('/elective-voting')} className="nav-link-custom active"><FaVoteYea className="me-2" /> VOTING</Nav.Link>
+                        </Nav>
+                        <div className="d-flex align-items-center ms-lg-4 mt-3 mt-lg-0">
+                            <div className="user-info text-white text-start me-3">
+                                <div className="user-name fw-bold">{userInfo.name}</div>
+                                <div className="user-role" style={{ opacity: 0.8, fontSize: '0.8rem' }}>{userInfo.email}</div>
+                            </div>
+                            <Button variant="danger" className="logout-btn fw-bold" onClick={handleLogout}>
+                                <FaSignOutAlt className="me-1" /> Logout
+                            </Button>
+                        </div>
+                    </Navbar.Collapse>
                 </Navbar>
-
+                
                 {/* ==========================================================
-                ✅ MAIN CONTENT AREA (Padded and Centered)
+                ✅ محتوى الصفحة الرئيسي
                 ========================================================== 
                 */}
-                <Container fluid="lg" className="py-5">
+                <main className="main-content p-4 p-md-5">
                     <Row className="justify-content-center">
-                        <Col lg={10} xl={8}>
+                        <Col lg={12} xl={10}>
                             
-                            <Card className="shadow-lg border-0">
-                                <Card.Header className="bg-primary text-white p-4">
-                                    <h3 className="mb-1 fw-bolder">Elective Course Voting</h3>
+                            <Card className="shadow-lg border-0 rounded-4">
+                                <Card.Header className="bg-primary text-white p-4 rounded-top-4">
+                                    <h3 className="mb-1 fw-bolder d-flex align-items-center"><FaVoteYea className="me-2" /> Elective Course Voting</h3>
                                     <p className="mb-0 fs-6">
                                         Rank your preferred elective courses by priority (1, 2, 3).
                                     </p>
@@ -237,6 +234,7 @@ function ElectiveVoting() {
                                                     <Button 
                                                         type="submit" 
                                                         size="lg" 
+                                                        variant="primary" // استخدام اللون الأساسي ليتناسب مع لوحة التحكم
                                                         className="vote-btn-custom fw-bold py-3"
                                                         disabled={usedPriorities.length === 0} // Disable if nothing is selected
                                                     >
@@ -250,7 +248,7 @@ function ElectiveVoting() {
                                             <div style={{ fontSize: '5rem', color: '#28a745' }}><FaCheckCircle /></div>
                                             <h3 className="text-success fw-bold mt-4 mb-3">Thank You for Voting!</h3>
                                             <p className="text-muted fs-5 mb-4">Your preferences have been submitted and can no longer be changed.</p>
-                                            <Button size="lg" className="vote-btn-custom fw-bold" onClick={() => navigate('/student-dashboard')}>
+                                            <Button size="lg" variant="primary" className="vote-btn-custom fw-bold" onClick={() => navigate('/student-dashboard')}>
                                                 <FaHome className="me-2" /> Return to Dashboard
                                             </Button>
                                         </div>
@@ -259,7 +257,7 @@ function ElectiveVoting() {
                             </Card>
                         </Col>
                     </Row>
-                </Container>
+                </main>
             </Container>
         </div>
     );
