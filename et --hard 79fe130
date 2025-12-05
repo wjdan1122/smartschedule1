@@ -1,0 +1,108 @@
+[33m79fe130[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m Update server logic
+[33m1929ed1[m 88Fix OpenAI schedule generator
+[33m430afe3[m 9Fix OpenAI schedule generator
+[33m38a0093[m 8Fix OpenAI schedule generator
+[33m74a44ba[m 7Fix OpenAI schedule generator
+[33m97746a9[m 6Fix OpenAI schedule generator
+[33mf7bd7f8[m 5Fix OpenAI schedule generator
+[33mdb6dae2[m 4Fix OpenAI schedule generator
+[33mf4cda11[m 3Fix OpenAI schedule generator
+[33m194e564[m 2Fix OpenAI schedule generator
+[33m8a461e0[m Fix OpenAI schedule generator
+[33m64f3c3a[m Fix OpenAI scheduler query formatting
+[33m02bb0b4[m Use strict OpenAI prompt with explicit course IDs
+[33m45c44dd[m Enforce required SE courses in AI schedule
+[33m9a94ed2[m Send SE course list to Gemini and refine prompt
+[33mfe4367d[m Improve Gemini prompt with electives and stability rules
+[33m176a119[m Refactor OpenAI API response handling and logging
+[33maa5c293[m ai2
+[33maeabd01[m ai
+[33m14d64b2[m Update server.js with Vercel link
+[33m3906a4c[m Add files via upload
+[33mbaefb89[m Update server.js log messages and JSON handling
+[33mdcb1df0[m Fix JSON output handling and update log message
+[33m6a20101[m Update server.js for OpenAI integration and fixes
+[33mdd57451[m Update server.js for AI scheduling improvements
+[33m842f053[m Enhance server.js for strict JSON output and error handling
+[33m8fb1fb0[m Update server.js for OpenAI integration
+[33m9f2face[m Update print statement from 'Hello' to 'Goodbye'
+[33m4e53e13[m Refactor server.js to implement Express server and WebSocket
+[33m342e8ef[m Refactor server.js for improved dashboard and data fetching
+[33m59e8e7e[m Refactor server.js for improved structure and validation
+[33mf08f5dd[m Refactor server.js for improved structure and logging
+[33m8798b98[m Refactor server.js for improved readability
+[33m5ecbd05[m Update print statement from 'Hello' to 'Goodbye'
+[33ma9d248c[m Update fmt.Println message from 'Hello' to 'Goodbye'
+[33m36cdafa[m Update print statement to show 'Goodbye World'
+[33ma4f1ac6[m Disable migrations to avoid SQL syntax errors
+[33m531e252[m Fix SQL syntax error by adjusting quotes in query
+[33m43c759a[m Refine SSL settings for DB connection
+[33mfb66725[m Fix SQL query and improve login handling
+[33m6e2fc58[m Refactor login route to improve query handling
+[33m6c3bb26[m Update print statement from 'Hello' to 'Goodbye'
+[33m11abd90[m Update print statement from 'Hello' to 'Goodbye'
+[33m67913cf[m Switch email transport from SendGrid to Nodemailer
+[33mfed0781[m Update print statement from 'Hello' to 'Goodbye'
+[33m8bb46b3[m Add files via upload
+[33m9ffc00e[m Update print statement from 'Hello' to 'Goodbye'
+[33mcf83129[m Add files via upload
+[33m4e99222[m Implement email service and update auth routes
+[33m27f1ffe[m Update print statement from 'Hello' to 'Goodbye'
+[33m131d1b3[m Update print statement from 'Hello' to 'Goodbye'
+[33mcc477bc[m Update print statement from 'Hello' to 'Goodbye'
+[33ma260ee7[m Refactor payload structure for API request
+[33ma3a3527[m Refactor payload to merge system instruction and user query
+[33mcd2c702[m Update API URL for Gemini model
+[33m516cd5c[m Update API URL for Gemini model
+[33m5e8720c[m zz
+[33ma67e8c2[m Change API base URL to new Render server
+[33m01cc786[m Force remove localhost fallback
+[33m1890afd[m Add Vercel domain to CORS
+[33m04c9c1d[m Remove localhost fallback from api.js
+[33mee8802d[m[33m ([m[1;33mtag: [m[1;33mv2[m[33m)[m Force strict API URL for production build
+[33me8076b1[m Forced V2 update to clear Render cache
+[33mf21bb7d[m التعديل علر رابط الموقع
+[33m2cd5630[m Fix API paths for production
+[33mc005787[m Merge branch 'main' of https://github.com/wjdan1122/smartschedule1
+[33m2542b97[m Remove committee password requirement from all registrations
+[33md96144a[m Update README.md
+[33m5c91874[m Rename ManageRules.jax to ManageRules.jsx
+[33m4d81fc3[m Rename ManageRules.JSX to ManageRules.jax
+[33m032c596[m التسليم الثاني+تعديل
+[33mfdba80e[m التسليم الثاني
+[33m2b6118a[m Update CORS
+[33m90ddf43[m Update CORS to allow production frontend
+[33m49ddefc[m Fix: Import ManageRules.JSX with uppercase
+[33m614eccd[m Fix: Add .jsx extensions to imports
+[33m2b0dbd9[m الربط في السب سبيس
+[33m069f364[m[33m ([m[1;32mbackup-pre-hard-reset[m[33m)[m اظافه صفحه اعظاء هيئه التدريس
+[33m38789b2[m Merge branch 'main' of https://github.com/wjdan1122/smartschedule1
+[33m2774ff7[m صفحه اللود كومتي
+[33m577fe57[m[33m ([m[1;33mtag: [m[1;33mn[m[33m)[m Update README.md
+[33mdf469d2[m النسخه الاخيره
+[33mb863e56[m تصحيح الاخطاء3
+[33m473608a[m تصحيح الاخطاء2
+[33m08197a9[m تصحيح الاخطاءt
+[33mc3840db[m feat: Implement full voting system and fix bugs
+[33mdbff410[m feat: Implement full voting system and fix bugs
+[33m45f635d[m تعديل كود السمارت سكجول اضافه الحفظ و الانشاءt
+[33me89a90d[m تعديل كود السمارت سكجول اضافه الحفظ و الانشاءt
+[33md91c2cb[m تعديل الجدول
+[33me7f26df[m اخر تحديث
+[33m513b213[m جداول 2
+[33maf01320[m الجدول
+[33m45b9177[m update users data - change student1 name to Dr. Malek
+[33m54663b9[m Revert "FIX: حل مشاكل المصادقة والأرقام الصفرية (0) وتحديث عبارات الترحيب"
+[33m0aaa2ba[m feat: تطبيق التغييرات النهائية بعد تنظيف تاريخ Git
+[33mc9d2732[m erge branch 'main' of
+[33m35e7a7f[m FIX: حل مشاكل المصادقة والأرقام الصفرية (0) وتحديث عبارات الترحيب
+[33m4a55fde[m Merge pull request #1 from sarahAlbu/main
+[33mc9992f9[m Merge branch 'wjdan1122:main' into main
+[33ma26e83f[m Add signup page, PostgreSQL migration, React+Bootstrap frontend
+[33m909ffad[m Initial commit of SmartSchedule project
+[33m58a1d87[m Initial commit
+[33mac401e2[m Fix: remove wrong submodule reference
+[33m43acd5b[m Complete SMART Schedule Management System
+[33m5a1345c[m Initial commit - SMART Schedule Management System
+[33m8519f11[m 1
+[33m6fc4082[m Initial commit

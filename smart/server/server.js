@@ -1,4 +1,4 @@
-console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ✅✅✅");
+﻿console.log("✅✅✅ RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ✅✅✅");
 console.log("👉 Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -60,6 +60,7 @@ app.use(
       'http://localhost:3000',
       'http://localhost:3001',
       'https://smartschedule1-b64l.onrender.com',
+      'https://smartschedule1-three.vercel.app',
       'https://endearing-kulfi-c96605.netlify.app' // ✅ رابط موقعك
     ],
     credentials: true,
@@ -853,7 +854,7 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
 
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
-  
+
   try {
     const { currentLevel, currentSchedule, user_command } = req.body || {};
 
@@ -868,7 +869,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     // ============================================
     const rulesResult = await client.query('SELECT text FROM rules ORDER BY rule_id');
     const rules = rulesResult.rows.map(r => r.text);
-    
+
     console.log(`📋 Found ${rules.length} rules in database:`, rules);
 
     // ============================================
@@ -883,39 +884,39 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
          OR (c.is_elective = true AND aebl.level = $1)
       ORDER BY c.is_elective, c.name
     `;
-    
+
     const coursesResult = await client.query(coursesQuery, [currentLevel]);
     const levelCourses = coursesResult.rows;
 
     if (levelCourses.length === 0) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: `No Software Engineering courses found for level ${currentLevel}`,
         suggestion: 'Please check course assignments and elective approvals'
       });
     }
 
-    console.log(`📖 Found ${levelCourses.length} courses for level ${currentLevel}:`, 
-                levelCourses.map(c => `${c.name} (${c.credit}h)`));
+    console.log(`📖 Found ${levelCourses.length} courses for level ${currentLevel}:`,
+      levelCourses.map(c => `${c.name} (${c.credit}h)`));
 
     // ============================================
     // 3️⃣ بناء خريطة الأوقات المحجوزة
     // ============================================
     const fixedSections = (currentSchedule.sections || [])
       .filter(sec => sec.dept_code !== 'SE');
-    
+
     const occupiedSlots = new Set();
     const occupiedDetails = [];
 
     fixedSections.forEach((section) => {
       const startHour = parseInt(section.start_time.split(':')[0]);
       const endHour = parseInt(section.end_time.split(':')[0]);
-      
+
       for (let h = startHour; h < endHour; h++) {
         const slot = `${section.day_code}-${h}`;
         occupiedSlots.add(slot);
         occupiedDetails.push({
           day: section.day_code,
-          time: `${h}:00-${h+1}:00`,
+          time: `${h}:00-${h + 1}:00`,
           course: section.course_name || 'Unknown'
         });
       }
@@ -927,7 +928,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     // 4️⃣ بناء قائمة الأوقات المحظورة من القواعد
     // ============================================
     const BLOCKED_SLOTS = new Set();
-    
+
     // 🚫 حظر وقت الغداء دائماً (12:00-13:00)
     const lunchDays = ['S', 'M', 'T', 'W', 'H'];
     lunchDays.forEach(day => {
@@ -942,7 +943,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     // 🚫 تحليل القواعد النصية للحظر الإضافي
     rules.forEach(rule => {
       const ruleLower = rule.toLowerCase();
-      
+
       // حظر أيام محددة
       if (ruleLower.includes('no classes') || ruleLower.includes('no class')) {
         if (ruleLower.includes('sunday')) {
@@ -1011,7 +1012,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     // 6️⃣ بناء Prompt للذكاء الاصطناعي
     // ============================================
     const dayMapping = {
-      'S': 'Sunday', 'M': 'Monday', 'T': 'Tuesday', 
+      'S': 'Sunday', 'M': 'Monday', 'T': 'Tuesday',
       'W': 'Wednesday', 'H': 'Thursday'
     };
 
@@ -1025,9 +1026,9 @@ ${rules.map((r, i) => `${i + 1}. ${r}`).join('\n')}
 
 🚫 ABSOLUTELY FORBIDDEN TIME SLOTS:
 ${Array.from(BLOCKED_SLOTS).slice(0, 20).map(slot => {
-  const [d, h] = slot.split('-');
-  return `${dayMapping[d] || d} ${h}:00-${parseInt(h)+1}:00`;
-}).join(', ')}
+      const [d, h] = slot.split('-');
+      return `${dayMapping[d] || d} ${h}:00-${parseInt(h) + 1}:00`;
+    }).join(', ')}
 ${BLOCKED_SLOTS.size > 20 ? `... and ${BLOCKED_SLOTS.size - 20} more blocked slots` : ''}
 
 🔒 ALREADY OCCUPIED (Other departments):
@@ -1110,26 +1111,26 @@ IMPORTANT: Output ONLY the JSON object, nothing else.`;
     if (!aiResponse.ok) {
       const errorData = await aiResponse.json();
       console.error('❌ OpenAI Error:', errorData);
-      return res.status(500).json({ 
-        error: 'AI service error', 
-        details: errorData.error?.message 
+      return res.status(500).json({
+        error: 'AI service error',
+        details: errorData.error?.message
       });
     }
 
     const aiResult = await aiResponse.json();
     let aiContent = aiResult.choices?.[0]?.message?.content || '{}';
-    
+
     // تنظيف النص من markdown
     aiContent = aiContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    
+
     let parsedSchedule;
     try {
       parsedSchedule = JSON.parse(aiContent);
     } catch (parseError) {
       console.error('❌ JSON Parse Error:', aiContent.substring(0, 500));
-      return res.status(500).json({ 
-        error: 'AI returned invalid JSON', 
-        sample: aiContent.substring(0, 300) 
+      return res.status(500).json({
+        error: 'AI returned invalid JSON',
+        sample: aiContent.substring(0, 300)
       });
     }
 
@@ -1154,24 +1155,24 @@ IMPORTANT: Output ONLY the JSON object, nothing else.`;
 
     scheduleArray.forEach((section, index) => {
       const errors = [];
-      
+
       // التحقق من course_id
       const courseId = Number(section.course_id);
       const course = levelCourses.find(c => c.course_id === courseId);
-      
+
       if (!course) {
         errors.push(`Invalid course_id: ${courseId} (not in Level ${currentLevel})`);
       }
 
       // تطبيع اليوم
-      const dayMap = { 
+      const dayMap = {
         'SUN': 'S', 'SUNDAY': 'S',
         'MON': 'M', 'MONDAY': 'M',
         'TUE': 'T', 'TUESDAY': 'T',
         'WED': 'W', 'WEDNESDAY': 'W',
         'THU': 'H', 'THURSDAY': 'H', 'TH': 'H'
       };
-      
+
       let day = String(section.day || '').toUpperCase();
       day = dayMap[day] || day;
 
@@ -1191,22 +1192,22 @@ IMPORTANT: Output ONLY the JSON object, nothing else.`;
       // التحقق من كل ساعة في النطاق
       for (let h = startHour; h < endHour; h++) {
         const slot = `${day}-${h}`;
-        
+
         // 🚫 تحقق من الحظر
         if (BLOCKED_SLOTS.has(slot)) {
           errors.push(`BLOCKED TIME: ${day} ${h}:00 (violates rules)`);
         }
-        
+
         // 🔒 تحقق من الأوقات المحجوزة
         if (occupiedSlots.has(slot)) {
           errors.push(`OCCUPIED: ${day} ${h}:00 (other department)`);
         }
-        
+
         // ✅ تحقق من التوفر
         if (!availableSlotsSet.has(slot)) {
           errors.push(`NOT AVAILABLE: ${day} ${h}:00`);
         }
-        
+
         // ⚠️ تحقق من التعارض الداخلي
         if (usedSlots.has(slot)) {
           errors.push(`CONFLICT: ${day} ${h}:00 (already scheduled)`);
@@ -1252,7 +1253,7 @@ IMPORTANT: Output ONLY the JSON object, nothing else.`;
     levelCourses.forEach(course => {
       const scheduled = courseHoursMap[course.course_id] || 0;
       const required = course.credit;
-      
+
       if (scheduled < required) {
         validationErrors.push({
           section: course.name,
@@ -1271,7 +1272,7 @@ IMPORTANT: Output ONLY the JSON object, nothing else.`;
     // ============================================
     if (validationErrors.length > 0) {
       console.error('❌ Validation failed:', validationErrors);
-      
+
       return res.status(400).json({
         error: 'Schedule validation failed',
         validation_errors: validationErrors,
@@ -1306,7 +1307,7 @@ IMPORTANT: Output ONLY the JSON object, nothing else.`;
 
   } catch (error) {
     console.error('💥 Server Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Server error during schedule generation',
       details: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
