@@ -1026,21 +1026,25 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     // 1️⃣ جلب المواد (SE الأساسية + الاختيارية المعتمدة فقط)
     // هذا الاستعلام ينفذ شرطك: "مواد هندسة البرمجيات" OR "المواد الاختيارية المعتمدة لهذا اللفل"
     const coursesResult = await client.query(
-      `SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
+      `SELECT DISTINCT ON (c.course_id) c.course_id, c.name, c.credit, c.dept_code, c.is_elective
        FROM courses c
        LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
-       WHERE (c.level = $1 AND c.dept_code = 'SE') 
-          OR (aebl.level = $1)`, // 👈 هنا الشرط: إما مادة تخصص أو مادة معتمدة
+       WHERE (c.level = $1 AND c.dept_code = 'SE')
+          OR (c.is_elective = true AND aebl.level = $1)`,
       [currentLevel]
     );
-    let resolvedSeCourses = coursesResult.rows;
+    const resolvedSeCourses = coursesResult.rows || [];
 
-    if (!resolvedSeCourses || resolvedSeCourses.length === 0) {
+    if (!resolvedSeCourses.length) {
       return res.status(404).json({ error: `No courses found for level ${currentLevel}.` });
     }
 
-    // 2️⃣ تحديد الأوقات المحجوزة (المواد الثابتة من أقسام أخرى)
-    const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
+    const courseMetaMap = new Map(resolvedSeCourses.map(course => [Number(course.course_id), course]));
+    const managedCourseIds = new Set([...courseMetaMap.keys()]);
+    const currentSections = Array.isArray(currentSchedule.sections) ? currentSchedule.sections : [];
+    const managedSections = currentSections.filter(sec => managedCourseIds.has(Number(sec.course_id)));
+    const fixedSections = currentSections.filter(sec => !managedCourseIds.has(Number(sec.course_id)));
+
     const occupiedMap = {};
     fixedSections.forEach((section) => {
       const startHour = parseInt(section.start_time.split(':')[0]);
@@ -1076,7 +1080,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 
     // 4️⃣ تجهيز البيانات للـ AI
     // (الجدول الحالي لضمان الاستقرار)
-    const currentSeSections = (currentSchedule.sections || []).filter(s => s.dept_code === 'SE');
+    const currentSeSections = managedSections;
     const currentScheduleText = currentSeSections.map(s =>
       `ID:${s.course_id} (${s.course_name}) -> Currently at ${s.day_code} ${s.start_time}`
     ).join('\n');
@@ -1144,38 +1148,124 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 
     if (!Array.isArray(scheduleArray)) scheduleArray = Object.values(generatedData).find(val => Array.isArray(val)) || [];
 
-    // 7️⃣ شبكة الأمان (Safety Net)
-    // لضمان عدم نسيان أي مادة (إجبارية أو اختيارية معتمدة)
-    const scheduledIds = scheduleArray.map(s => Number(s.course_id));
-    const missingCourses = resolvedSeCourses.filter(c => !scheduledIds.includes(c.course_id));
+    // 7?? ???? ?????? (Safety Net)
+    // ????? ??? ????? ?? ???? (??????? ?? ???????? ??????)
+    const scheduledIds = new Set(scheduleArray.map(s => Number(s.course_id)));
+    const existingManagedIds = new Set(managedSections.map(sec => Number(sec.course_id)));
+    const missingCourses = resolvedSeCourses.filter(c => {
+      const id = Number(c.course_id);
+      return !scheduledIds.has(id) && !existingManagedIds.has(id);
+    });
+
+    const normalizeDay = (d) => ({ 'SUN': 'S', 'MON': 'M', 'TUE': 'T', 'WED': 'W', 'THU': 'H', 'TH': 'H' }[String(d).toUpperCase()] || String(d).toUpperCase());
+    const slotKey = (day, hour) => `${day}-${hour}`;
+    const toHour = (value) => {
+      if (!value) return null;
+      const parsed = parseInt(String(value).split(':')[0], 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    };
+    const markOccupiedRange = (store, dayValue, startTime, endTime) => {
+      const normalized = normalizeDay(dayValue);
+      const start = toHour(startTime);
+      const end = toHour(endTime);
+      if (!normalized || start === null || end === null) return;
+      for (let h = start; h < end; h++) {
+        store.add(slotKey(normalized, h));
+      }
+    };
+
+    const fallbackOccupied = new Set();
+    fixedSections.forEach(section => markOccupiedRange(fallbackOccupied, section.day_code, section.start_time, section.end_time));
+    managedSections.forEach(section => {
+      if (!scheduledIds.has(Number(section.course_id))) {
+        markOccupiedRange(fallbackOccupied, section.day_code, section.start_time, section.end_time);
+      }
+    });
+    scheduleArray.forEach(section => {
+      markOccupiedRange(fallbackOccupied, section.day || section.day_code, section.start_time, section.end_time);
+    });
+
+    const findFallbackSlot = (creditHours = 1) => {
+      for (const day of days) {
+        for (const hour of hours) {
+          if (avoidLunch && hour === 12) continue;
+          let canUse = true;
+          for (let h = hour; h < hour + creditHours; h++) {
+            if (avoidLunch && h === 12) { canUse = false; break; }
+            if (fallbackOccupied.has(slotKey(day, h))) {
+              canUse = false;
+              break;
+            }
+          }
+          if (canUse) {
+            for (let h = hour; h < hour + creditHours; h++) {
+              fallbackOccupied.add(slotKey(day, h));
+            }
+            const start_time = `${String(hour).padStart(2, '0')}:00`;
+            const end_time = `${String(hour + creditHours).padStart(2, '0')}:00`;
+            return { day, start_time, end_time };
+          }
+        }
+      }
+      return null;
+    };
 
     if (missingCourses.length > 0) {
-      console.warn('⚠️ AI missed courses. Forcing...', missingCourses.map(c => c.name));
-      const fallbackSlot = freeSlots.length > 0 ? freeSlots[0] : { day: "S", time: "08:00-09:00" };
-      const forcedSections = missingCourses.map(c => ({
-        course_id: c.course_id,
-        day: fallbackSlot.day,
-        start_time: fallbackSlot.time.split('-')[0],
-        end_time: `0${parseInt(fallbackSlot.time.split('-')[0]) + (c.credit || 1)}:00`.slice(-5),
-        section_type: "LECTURE", is_forced: true
-      }));
-      scheduleArray = [...scheduleArray, ...forcedSections];
+      console.warn('?? AI missed courses. Forcing...', missingCourses.map(c => c.name));
+      missingCourses.forEach(c => {
+        const slot = findFallbackSlot(c.credit || 1);
+        const fallbackDay = slot?.day || 'S';
+        const fallbackStart = slot?.start_time || '08:00';
+        const fallbackEnd = slot?.end_time || `${String((parseInt(fallbackStart.split(':')[0], 10) || 8) + (c.credit || 1)).padStart(2, '0')}:00`;
+        if (!slot) {
+          const startHour = parseInt(fallbackStart.split(':')[0], 10) || 8;
+          for (let h = startHour; h < startHour + (c.credit || 1); h++) {
+            fallbackOccupied.add(slotKey(fallbackDay, h));
+          }
+        }
+        scheduleArray.push({
+          course_id: c.course_id,
+          day: fallbackDay,
+          start_time: fallbackStart,
+          end_time: fallbackEnd,
+          section_type: "LECTURE",
+          is_forced: true
+        });
+      });
     }
 
-    // 8️⃣ دمج وإرجاع النتيجة
-    const normalizeDay = (d) => ({ 'SUN': 'S', 'MON': 'M', 'TUE': 'T', 'WED': 'W', 'THU': 'H', 'TH': 'H' }[String(d).toUpperCase()] || String(d).toUpperCase());
+    const managedSectionMap = new Map();
+    managedSections.forEach(section => {
+      managedSectionMap.set(Number(section.course_id), { ...section });
+    });
+    scheduleArray.forEach(s => {
+      const courseId = Number(s.course_id);
+      if (!courseId) return;
+      const dayCode = normalizeDay(s.day || s.day_code);
+      const startTime = s.start_time || s.start;
+      const endTime = s.end_time || s.end;
+      if (!dayCode || !startTime || !endTime) return;
+      const meta = courseMetaMap.get(courseId) || {};
+      const previous = managedSectionMap.get(courseId) || {};
+      managedSectionMap.set(courseId, {
+        ...previous,
+        ...s,
+        course_id: courseId,
+        course_name: s.course_name || meta.name || previous.course_name,
+        dept_code: meta.dept_code || s.dept_code || previous.dept_code || 'SE',
+        credit: meta.credit ?? s.credit ?? previous.credit,
+        day_code: dayCode,
+        start_time: startTime,
+        end_time: endTime,
+        section_type: s.section_type || previous.section_type || 'LECTURE',
+        is_ai_generated: true,
+        student_group: currentSchedule.id
+      });
+    });
 
-    const newSections = scheduleArray.map(s => ({
-      ...s,
-      day_code: normalizeDay(s.day || s.day_code),
-      dept_code: 'SE',
-      is_ai_generated: true,
-      student_group: currentSchedule.id,
-      course_id: Number(s.course_id)
-    }));
+    const mergedSchedule = [...fixedSections, ...Array.from(managedSectionMap.values())];
 
-    // دمج الجدول الجديد (AI) مع المواد الثابتة (Non-SE)
-    res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "Some courses were auto-added." : null });
+    res.json({ success: true, schedule: mergedSchedule, warning: missingCourses.length > 0 ? "Some courses were auto-added." : null });
 
   } catch (error) {
     console.error('AI Error:', error);
