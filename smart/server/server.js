@@ -844,6 +844,7 @@ app.get('/api/statistics', authenticateToken, async (req, res) => {
     client.release();
   }
 });
+/*1
 // ============================================
 // 🔥 AI SCHEDULER ROUTE (Dynamic Rules + User Priority) 🔥
 // ============================================
@@ -1001,6 +1002,170 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     }));
 
     res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "AI missed some courses." : null });
+
+  } catch (error) {
+    console.error('AI Error:', error);
+    res.status(500).json({ error: 'Failed to generate schedule. AI Error.' });
+  } finally {
+    client.release();
+  }
+});*/
+
+// ============================================
+// 🔥 AI SCHEDULER ROUTE (Strict Step-by-Step Logic) 🔥
+// ============================================
+app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { currentLevel, currentSchedule, seCourses, rules, user_command } = req.body || {};
+
+    if (!currentLevel || !currentSchedule) {
+      return res.status(400).json({ error: 'Current level and schedule are required.' });
+    }
+
+    // 1. Fetch ALL Required Courses (Including Electives)
+    let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length > 0 ? seCourses : null;
+    if (!resolvedSeCourses) {
+      const coursesResult = await client.query(
+        `SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
+         FROM courses c
+         LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
+         WHERE (c.level = $1 AND c.dept_code = 'SE') 
+            OR (aebl.level = $1)`,
+        [currentLevel]
+      );
+      resolvedSeCourses = coursesResult.rows;
+    }
+
+    // 2. Identify Occupied Slots (Non-SE)
+    const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
+    const occupiedMap = {};
+    fixedSections.forEach((section) => {
+      const startHour = parseInt(section.start_time.split(':')[0]);
+      const endHour = parseInt(section.end_time.split(':')[0]);
+      for (let h = startHour; h < endHour; h++) {
+        occupiedMap[`${section.day_code}-${h}`] = true;
+      }
+    });
+
+    // 3. Calculate FREE Slots
+    const days = ['S', 'M', 'T', 'W', 'H'];
+    const hours = [8, 9, 10, 11, 12, 13, 14];
+    const freeSlots = [];
+    days.forEach(day => {
+      hours.forEach(hour => {
+        if (!occupiedMap[`${day}-${hour}`]) {
+          const timeStr = `${String(hour).padStart(2, '0')}:00-${String(hour + 1).padStart(2, '0')}:00`;
+          freeSlots.push({ day, time: timeStr });
+        }
+      });
+    });
+
+    // 4. Current Schedule Text
+    const currentSeSections = (currentSchedule.sections || []).filter(s => s.dept_code === 'SE');
+    const currentScheduleText = currentSeSections.map(s =>
+      `ID:${s.course_id} (${s.course_name}) is currently at ${s.day_code} ${s.start_time}`
+    ).join('\n');
+
+    const requiredCoursesText = resolvedSeCourses
+      .map(c => `ID:${c.course_id} Name:${c.name} (Needs ${c.credit} slots)`)
+      .join('\n');
+
+    // 5. THE STRICT PROMPT (Step-by-Step)
+    const systemInstruction = `
+    You are a robotic scheduler. Follow these steps STRICTLY in order:
+
+    STEP 1: REPLICATE
+    - Start by copying all courses from "CURRENT_SCHEDULE" to your output.
+    - DO NOT change their times yet.
+
+    STEP 2: EXECUTE COMMAND
+    - Read the "USER_COMMAND".
+    - Apply the change requested (e.g., move course X to day Y).
+    - If the new slot is taken by another course, swap them or move the other course to a free slot.
+
+    STEP 3: FILL GAPS
+    - Check "REQUIRED_COURSES".
+    - If any course is missing from your schedule (e.g., electives), add them to "AVAILABLE_SLOTS".
+    - Ensure every course has exactly the number of slots specified in "Needs X slots".
+
+    RULES:
+    - USE ONLY "AVAILABLE_SLOTS" for new or moved courses.
+    - NO OVERLAP allowed.
+    - OUTPUT MUST BE A JSON OBJECT.
+    `;
+
+    const userQuery = `
+    CONTEXT: Level ${currentLevel}
+    
+    AVAILABLE_SLOTS: ${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
+    
+    CURRENT_SCHEDULE:
+    ${currentScheduleText}
+
+    REQUIRED_COURSES:
+    ${requiredCoursesText}
+
+    USER_COMMAND: "${user_command || 'Generate optimal schedule'}"
+
+    OUTPUT FORMAT:
+    { "schedule": [{ "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }] }
+    `;
+
+    // 6. Call OpenAI
+    const apiKey = process.env.OPENAI_API_KEY;
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo-1106',
+        messages: [
+          { role: "system", content: systemInstruction },
+          { role: "user", content: userQuery }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.1
+      })
+    });
+
+    const result = await response.json();
+    let jsonText = result.choices?.[0]?.message?.content || '';
+    jsonText = jsonText.replace(/```json|```/g, '').trim();
+    let generatedData = JSON.parse(jsonText);
+    let scheduleArray = generatedData.schedule || generatedData;
+
+    if (!Array.isArray(scheduleArray)) scheduleArray = Object.values(generatedData).find(val => Array.isArray(val)) || [];
+
+    // 7. Safety Net (Re-inserted correctly)
+    const scheduledIds = scheduleArray.map(s => Number(s.course_id));
+    const missingCourses = resolvedSeCourses.filter(c => !scheduledIds.includes(c.course_id));
+
+    if (missingCourses.length > 0) {
+      // Find first available slot or default
+      const fallbackSlot = freeSlots.length > 0 ? freeSlots[0] : { day: "S", time: "08:00-09:00" };
+      const forcedSections = missingCourses.map(c => ({
+        course_id: c.course_id,
+        day: fallbackSlot.day,
+        start_time: fallbackSlot.time.split('-')[0],
+        end_time: `0${parseInt(fallbackSlot.time.split('-')[0]) + (c.credit || 1)}:00`.slice(-5),
+        section_type: "LECTURE", is_forced: true
+      }));
+      scheduleArray = [...scheduleArray, ...forcedSections];
+    }
+
+    // 8. Merge & Return
+    const normalizeDay = (d) => ({ 'SUN': 'S', 'MON': 'M', 'TUE': 'T', 'WED': 'W', 'THU': 'H', 'TH': 'H' }[String(d).toUpperCase()] || String(d).toUpperCase());
+
+    const newSections = scheduleArray.map(s => ({
+      ...s,
+      day_code: normalizeDay(s.day || s.day_code),
+      dept_code: 'SE',
+      is_ai_generated: true,
+      student_group: currentSchedule.id,
+      course_id: Number(s.course_id)
+    }));
+
+    res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "Some courses were forced." : null });
 
   } catch (error) {
     console.error('AI Error:', error);
