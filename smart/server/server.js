@@ -1,4 +1,4 @@
-﻿console.log("??? RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ???");
+console.log("??? RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ???");
 console.log("?? Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -239,7 +239,9 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
   }
 });
 
-// ? (????) ???? ??? ????? ????? ???? ??????
+// ========================================================================================
+// ✅ تم تعديل هذه الدالة لاستخدام EmailJS فقط وإلقاء خطأ حقيقي عند الفشل.
+// ========================================================================================
 app.post('/api/auth/forgot-password', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -247,6 +249,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     const userCheck = await client.query('SELECT * FROM users WHERE email = $1', [email]);
 
     if (userCheck.rows.length === 0) {
+      // إبقاء رسالة مبهمة لأغراض أمنية
       return res.json({ message: 'If an account exists, reset instructions have been sent.' });
     }
 
@@ -257,53 +260,29 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     const resetLink = `${RESET_BASE_URL}/reset-password?token=${resetToken}`;
 
-    const htmlBody = `<p>You requested a password reset.</p><p>Click here to reset: <a href="${resetLink}">Reset Password</a></p>`;
-
-    let sent = false;
-
-    // Try EmailJS first if configured
+    // 1. Try EmailJS only
     if (canUseEmailJS()) {
-      try {
-        await sendResetWithEmailJS({ to: email, resetLink });
-        sent = true;
-      } catch (err) {
-        console.error('EmailJS send error:', err);
-      }
+      await sendResetWithEmailJS({ to: email, resetLink });
+      console.log('✅ EmailJS successful.');
+    } else {
+      // إذا لم يتم تهيئة EmailJS، ألقِ خطأ هنا.
+      throw new Error('EmailJS is not configured in environment variables.');
     }
 
-    // Fallback to Resend
-    if (process.env.RESEND_API_KEY) {
-      try {
-        await resend.emails.send({
-          from: RESET_FROM,
-          to: email,
-          subject: 'SmartSchedule - Reset Password',
-          html: htmlBody
-        });
-        sent = true;
-      } catch (err) {
-        console.error('Resend send error:', err);
-      }
-    }
-
-    if (!sent) {
-      const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: 'SmartSchedule - Reset Password',
-        html: htmlBody
-      };
-      await transporter.sendMail(mailOptions);
-    }
+    // إذا وصلت إلى هنا، فهذا يعني أن EmailJS نجح
     res.json({ success: true, message: 'Email sent successfully' });
 
   } catch (error) {
-    console.error('Forgot Password Error:', error);
-    res.status(500).json({ error: 'Failed to send email' });
+    console.error('Forgot Password Error (EmailJS failed):', error.message || error);
+    // إرجاع رمز خطأ 500 ورسالة تفيد بالفشل
+    res.status(500).json({ error: 'Failed to send reset email. Please try again later.' });
   } finally {
     client.release();
   }
 });
+// ========================================================================================
+// ✅ نهاية التعديل
+// ========================================================================================
 
 // ? (????) ???? ??? ???? ?????? ???????
 app.post('/api/auth/reset-password', async (req, res) => {
@@ -922,10 +901,10 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 
     const coursesResult = await client.query(
       `SELECT DISTINCT ON (c.course_id) c.course_id, c.name, c.credit, c.dept_code, c.is_elective
-       FROM courses c
-       LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
-       WHERE (c.level = $1 AND c.dept_code = 'SE')
-          OR (c.is_elective = true AND aebl.level = $1)`,
+        FROM courses c
+        LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
+        WHERE (c.level = $1 AND c.dept_code = 'SE')
+           OR (c.is_elective = true AND aebl.level = $1)`,
       [currentLevel]
     );
     const resolvedSeCourses = coursesResult.rows || [];
@@ -1076,8 +1055,8 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     1. Look at the "CURRENT SCHEDULE".
     2. Apply the "USER COMMAND" (e.g., move a course). This is the most important step.
     3. Ensure ALL courses in "REQUIRED COURSES" list are scheduled.
-       - If a course is already in the schedule and not changed by the user, KEEP IT as is.
-       - If a course is missing (e.g. an elective), find a free slot for it from "AVAILABLE SLOTS".
+        - If a course is already in the schedule and not changed by the user, KEEP IT as is.
+        - If a course is missing (e.g. an elective), find a free slot for it from "AVAILABLE SLOTS".
     4. Respect "AVAILABLE SLOTS" only. Do not overlap.
     
     OUTPUT: Valid JSON array only.
@@ -1452,5 +1431,3 @@ const gracefulShutdown = () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
-
-
