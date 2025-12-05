@@ -11,10 +11,11 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  // 📧 دالة مُعدلة لقبول أي تنسيق بريد إلكتروني صحيح (General Email Validation)
   const validateEmail = (email) => {
-    const studentPattern = /^[0-9]{9}@student\.ksu\.edu\.sa$/;
-    const staffPattern = /^[a-zA-Z0-9._-]+@ksu\.edu\.sa$/;
-    return studentPattern.test(email) || staffPattern.test(email);
+    // نمط Regex عام للتحقق من تنسيق البريد الإلكتروني الأساسي
+    const generalPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    return generalPattern.test(email);
   };
 
   const handleSubmit = async (e) => {
@@ -24,29 +25,22 @@ function Login() {
 
     const errors = {};
 
-    // Validation
+    // 1. التحقق من صحة البريد الإلكتروني
     if (!email) {
       errors.email = 'Email is required';
     } else if (!validateEmail(email)) {
-      if (email.endsWith('@student.ksu.edu.sa')) {
-        const emailPrefix = email.split('@')[0];
-        if (!/^[0-9]{9}$/.test(emailPrefix)) {
-          errors.email = 'Student email must be exactly 9 digits (e.g., 123456789@student.ksu.edu.sa)';
-        } else {
-          errors.email = 'Invalid email format';
-        }
-      } else {
-        errors.email = 'Please use a valid KSU email address';
-      }
+      // ✅ تم تغيير رسالة الخطأ لتناسب أي إيميل
+      errors.email = 'Please enter a valid email address (e.g., user@example.com)';
     }
 
+    // 2. التحقق من صحة كلمة المرور
     if (!password) {
       errors.password = 'Password is required';
     } else if (password.length < 6) {
       errors.password = 'Password must be at least 6 characters';
     }
 
-    // If there are validation errors, show them
+    // إذا كان هناك أخطاء في التحقق، اعرضها
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setError('Please fix the errors below');
@@ -109,14 +103,8 @@ function Login() {
       if (err.response?.status === 401) {
         setError('❌ Invalid email or password. Please try again.');
       } else if (backendError) {
-        if (backendError.includes('9 digits')) {
-          setFieldErrors({ email: backendError });
-          setError('Please check your email format');
-        } else if (backendError.includes('Email')) {
-          setFieldErrors({ email: backendError });
-        } else {
-          setError('❌ ' + backendError);
-        }
+        // 🛑 تم إزالة منطق التحقق من أخطاء KSU 9 digits
+        setError('❌ ' + backendError);
       } else {
         setError('❌ Login failed. Please check your credentials and try again.');
       }
@@ -135,8 +123,8 @@ function Login() {
           <Col md={6} lg={5}>
             <Card className="shadow-lg border-0">
               <Card.Header className="bg-primary text-white text-center py-4">
-                <h2 className="mb-2">King Saud University</h2>
-                <p className="mb-0">SmartSchedule</p>
+                <h2 className="mb-2">SmartSchedule</h2>
+                <p className="mb-0">General Login</p>
               </Card.Header>
               <Card.Body className="p-4">
                 {error && (
@@ -148,10 +136,11 @@ function Login() {
 
                 <Form onSubmit={handleSubmit}>
                   <Form.Group className="mb-3">
-                    <Form.Label>University Email</Form.Label>
+                    <Form.Label>Email Address</Form.Label>
                     <Form.Control
                       type="email"
-                      placeholder="123456789@student.ksu.edu.sa"
+                      // ✅ تم تغيير Placeholder
+                      placeholder="Enter your email address"
                       value={email}
                       onChange={(e) => {
                         setEmail(e.target.value);
@@ -168,6 +157,7 @@ function Login() {
                       </Form.Control.Feedback>
                     ) : (
                       <Form.Text className="text-muted">
+                        {/* ⚠️ تم إزالة نص الإرشادات الخاص بـ KSU */}
                       </Form.Text>
                     )}
                   </Form.Group>
