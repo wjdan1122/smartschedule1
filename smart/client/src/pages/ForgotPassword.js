@@ -12,7 +12,7 @@ function ForgotPassword() {
 
   const validateEmail = (value) => {
     const trimmed = value.trim().toLowerCase();
-    const studentPattern = /^[0-9]{9}@student\.ksu\.edu\.sa$/;
+    const studentPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     const staffPattern = /^[a-zA-Z0-9._-]+@ksu\.edu\.sa$/;
     return studentPattern.test(trimmed) || staffPattern.test(trimmed);
   };
