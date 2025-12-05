@@ -1012,32 +1012,34 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 });*/
 
 // ============================================
-// 🔥 AI SCHEDULER ROUTE (Strict Step-by-Step Logic) 🔥
+// 🎯 AI SCHEDULER ROUTE (Correct Logic: SE + Approved Electives + Stability)
 // ============================================
 app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { currentLevel, currentSchedule, seCourses, rules, user_command } = req.body || {};
+    const { currentLevel, currentSchedule, user_command } = req.body || {};
 
     if (!currentLevel || !currentSchedule) {
       return res.status(400).json({ error: 'Current level and schedule are required.' });
     }
 
-    // 1. Fetch ALL Required Courses (Including Electives)
-    let resolvedSeCourses = Array.isArray(seCourses) && seCourses.length > 0 ? seCourses : null;
-    if (!resolvedSeCourses) {
-      const coursesResult = await client.query(
-        `SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
-         FROM courses c
-         LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
-         WHERE (c.level = $1 AND c.dept_code = 'SE') 
-            OR (aebl.level = $1)`,
-        [currentLevel]
-      );
-      resolvedSeCourses = coursesResult.rows;
+    // 1️⃣ جلب المواد (SE الأساسية + الاختيارية المعتمدة فقط)
+    // هذا الاستعلام ينفذ شرطك: "مواد هندسة البرمجيات" OR "المواد الاختيارية المعتمدة لهذا اللفل"
+    const coursesResult = await client.query(
+      `SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
+       FROM courses c
+       LEFT JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
+       WHERE (c.level = $1 AND c.dept_code = 'SE') 
+          OR (aebl.level = $1)`, // 👈 هنا الشرط: إما مادة تخصص أو مادة معتمدة
+      [currentLevel]
+    );
+    let resolvedSeCourses = coursesResult.rows;
+
+    if (!resolvedSeCourses || resolvedSeCourses.length === 0) {
+      return res.status(404).json({ error: `No courses found for level ${currentLevel}.` });
     }
 
-    // 2. Identify Occupied Slots (Non-SE)
+    // 2️⃣ تحديد الأوقات المحجوزة (المواد الثابتة من أقسام أخرى)
     const fixedSections = (currentSchedule.sections || []).filter(sec => sec.dept_code !== 'SE');
     const occupiedMap = {};
     fixedSections.forEach((section) => {
@@ -1048,12 +1050,23 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       }
     });
 
-    // 3. Calculate FREE Slots
+    // 3️⃣ حساب الفراغات المتاحة (مع تطبيق القواعد)
+    // جلب القواعد من قاعدة البيانات
+    const rulesResult = await client.query('SELECT text FROM rules');
+    const rulesList = rulesResult.rows.map(r => r.text.toLowerCase());
+
+    // هل هناك قاعدة لمنع وقت الغداء (12-1)؟
+    const avoidLunch = rulesList.some(r => r.includes('12') || r.includes('break') || r.includes('lunch'));
+
     const days = ['S', 'M', 'T', 'W', 'H'];
     const hours = [8, 9, 10, 11, 12, 13, 14];
     const freeSlots = [];
+
     days.forEach(day => {
       hours.forEach(hour => {
+        // تطبيق قاعدة الغداء إذا وجدت
+        if (avoidLunch && hour === 12) return;
+
         if (!occupiedMap[`${day}-${hour}`]) {
           const timeStr = `${String(hour).padStart(2, '0')}:00-${String(hour + 1).padStart(2, '0')}:00`;
           freeSlots.push({ day, time: timeStr });
@@ -1061,58 +1074,53 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       });
     });
 
-    // 4. Current Schedule Text
+    // 4️⃣ تجهيز البيانات للـ AI
+    // (الجدول الحالي لضمان الاستقرار)
     const currentSeSections = (currentSchedule.sections || []).filter(s => s.dept_code === 'SE');
     const currentScheduleText = currentSeSections.map(s =>
-      `ID:${s.course_id} (${s.course_name}) is currently at ${s.day_code} ${s.start_time}`
+      `ID:${s.course_id} (${s.course_name}) -> Currently at ${s.day_code} ${s.start_time}`
     ).join('\n');
 
+    // (قائمة المواد المطلوبة)
     const requiredCoursesText = resolvedSeCourses
-      .map(c => `ID:${c.course_id} Name:${c.name} (Needs ${c.credit} slots)`)
+      .map(c => `ID:${c.course_id} | Name:${c.name} | Needs:${c.credit} hours`)
       .join('\n');
 
-    // 5. THE STRICT PROMPT (Step-by-Step)
+    // 5️⃣ التعليمات (Prompt) - بسيطة ومباشرة
     const systemInstruction = `
-    You are a robotic scheduler. Follow these steps STRICTLY in order:
-
-    STEP 1: REPLICATE
-    - Start by copying all courses from "CURRENT_SCHEDULE" to your output.
-    - DO NOT change their times yet.
-
-    STEP 2: EXECUTE COMMAND
-    - Read the "USER_COMMAND".
-    - Apply the change requested (e.g., move course X to day Y).
-    - If the new slot is taken by another course, swap them or move the other course to a free slot.
-
-    STEP 3: FILL GAPS
-    - Check "REQUIRED_COURSES".
-    - If any course is missing from your schedule (e.g., electives), add them to "AVAILABLE_SLOTS".
-    - Ensure every course has exactly the number of slots specified in "Needs X slots".
-
-    RULES:
-    - USE ONLY "AVAILABLE_SLOTS" for new or moved courses.
-    - NO OVERLAP allowed.
-    - OUTPUT MUST BE A JSON OBJECT.
+    You are a university scheduler assistant.
+    
+    YOUR TASK:
+    1. Look at the "CURRENT SCHEDULE".
+    2. Apply the "USER COMMAND" (e.g., move a course). This is the most important step.
+    3. Ensure ALL courses in "REQUIRED COURSES" list are scheduled.
+       - If a course is already in the schedule and not changed by the user, KEEP IT as is.
+       - If a course is missing (e.g. an elective), find a free slot for it from "AVAILABLE SLOTS".
+    4. Respect "AVAILABLE SLOTS" only. Do not overlap.
+    
+    OUTPUT: Valid JSON array only.
     `;
 
     const userQuery = `
     CONTEXT: Level ${currentLevel}
     
-    AVAILABLE_SLOTS: ${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
-    
-    CURRENT_SCHEDULE:
-    ${currentScheduleText}
+    AVAILABLE SLOTS (Use these for new/moved courses):
+    ${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
 
-    REQUIRED_COURSES:
+    REQUIRED COURSES (Must be present in output):
     ${requiredCoursesText}
 
-    USER_COMMAND: "${user_command || 'Generate optimal schedule'}"
+    CURRENT SCHEDULE (Keep these unless User Command says otherwise):
+    ${currentScheduleText}
+
+    USER COMMAND: 
+    "${user_command || 'Generate/Update schedule'}"
 
     OUTPUT FORMAT:
     { "schedule": [{ "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }] }
     `;
 
-    // 6. Call OpenAI
+    // 6️⃣ الاتصال بـ OpenAI
     const apiKey = process.env.OPENAI_API_KEY;
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -1124,7 +1132,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
           { role: "user", content: userQuery }
         ],
         response_format: { type: "json_object" },
-        temperature: 0.1
+        temperature: 0.2 // حرارة منخفضة لزيادة الدقة
       })
     });
 
@@ -1136,12 +1144,13 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 
     if (!Array.isArray(scheduleArray)) scheduleArray = Object.values(generatedData).find(val => Array.isArray(val)) || [];
 
-    // 7. Safety Net (Re-inserted correctly)
+    // 7️⃣ شبكة الأمان (Safety Net)
+    // لضمان عدم نسيان أي مادة (إجبارية أو اختيارية معتمدة)
     const scheduledIds = scheduleArray.map(s => Number(s.course_id));
     const missingCourses = resolvedSeCourses.filter(c => !scheduledIds.includes(c.course_id));
 
     if (missingCourses.length > 0) {
-      // Find first available slot or default
+      console.warn('⚠️ AI missed courses. Forcing...', missingCourses.map(c => c.name));
       const fallbackSlot = freeSlots.length > 0 ? freeSlots[0] : { day: "S", time: "08:00-09:00" };
       const forcedSections = missingCourses.map(c => ({
         course_id: c.course_id,
@@ -1153,7 +1162,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       scheduleArray = [...scheduleArray, ...forcedSections];
     }
 
-    // 8. Merge & Return
+    // 8️⃣ دمج وإرجاع النتيجة
     const normalizeDay = (d) => ({ 'SUN': 'S', 'MON': 'M', 'TUE': 'T', 'WED': 'W', 'THU': 'H', 'TH': 'H' }[String(d).toUpperCase()] || String(d).toUpperCase());
 
     const newSections = scheduleArray.map(s => ({
@@ -1165,11 +1174,12 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       course_id: Number(s.course_id)
     }));
 
-    res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "Some courses were forced." : null });
+    // دمج الجدول الجديد (AI) مع المواد الثابتة (Non-SE)
+    res.json({ success: true, schedule: [...fixedSections, ...newSections], warning: missingCourses.length > 0 ? "Some courses were auto-added." : null });
 
   } catch (error) {
     console.error('AI Error:', error);
-    res.status(500).json({ error: 'Failed to generate schedule. AI Error.' });
+    res.status(500).json({ error: 'Failed to generate schedule.' });
   } finally {
     client.release();
   }
