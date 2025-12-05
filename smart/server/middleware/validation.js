@@ -32,6 +32,9 @@ const validateUserRegistration = (req, res, next) => {
     if (!emailCheck.isValid) {
         return res.status(400).json({ error: emailCheck.error });
     }
+    if (emailCheck.type === 'generic') {
+        return res.status(400).json({ error: 'Staff registration requires a university email (@ksu.edu.sa).' });
+    }
 
     // 3. Validate password
     const passwordCheck = validatePassword(password);
