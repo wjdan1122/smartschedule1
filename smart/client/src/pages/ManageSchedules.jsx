@@ -156,7 +156,8 @@ const ManageSchedules = () => {
     const [sendingId, setSendingId] = useState(null);
     const [userInfo, setUserInfo] = useState({ name: '', role: '', id: '', email: '' });
     const [onlineEditors, setOnlineEditors] = useState([]);
-    const [viewMode, setViewMode] = useState('raw'); // 'raw' | 'active'
+    const [viewMode, setViewMode] = useState('raw'); // 'raw' | 'version'
+    const [selectedVersionId, setSelectedVersionId] = useState(null);
 
     useEffect(() => {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -167,6 +168,12 @@ const ManageSchedules = () => {
             email: user.email || ''
         });
     }, []);
+
+    // عند تغيير المستوى، ارجع للعرض الخام وافتح نسخة جديدة عند الحاجة
+    useEffect(() => {
+        setViewMode('raw');
+        setSelectedVersionId(null);
+    }, [currentLevel]);
 
     useEffect(() => {
         const doc = new Y.Doc();
@@ -217,9 +224,13 @@ const ManageSchedules = () => {
             setSavedVersions(versionsData);
 
             const activeVersion = versionsData.find(v => v.is_active);
+            const selectedVersion = versionsData.find(v => v.id === selectedVersionId);
             let sectionsToDisplay = [];
 
-            if (viewMode === 'active' && activeVersion && activeVersion.sections) {
+            if (viewMode === 'version' && selectedVersion && selectedVersion.sections) {
+                sectionsToDisplay = typeof selectedVersion.sections === 'string' ? JSON.parse(selectedVersion.sections) : selectedVersion.sections;
+            } else if (viewMode === 'version' && !selectedVersion && activeVersion && activeVersion.sections) {
+                // fallback to active if selected missing
                 sectionsToDisplay = typeof activeVersion.sections === 'string' ? JSON.parse(activeVersion.sections) : activeVersion.sections;
             } else {
                 // Default view: raw sections from DB for the current level.
@@ -234,9 +245,20 @@ const ManageSchedules = () => {
             if (err.message === 'AUTHENTICATION_FAILED') navigate('/login');
             else setError('Failed to load data. Please refresh the page.');
         } finally { setLoading(false); }
-    }, [currentLevel, navigate, studentCount, viewMode]);
+    }, [currentLevel, navigate, studentCount, viewMode, selectedVersionId]);
 
     useEffect(() => { fetchAllData(); }, [fetchAllData]);
+
+    const handleViewVersion = (version) => {
+        setSelectedVersionId(version.id);
+        setViewMode('version');
+    };
+
+    const handleShowRaw = () => {
+        setViewMode('raw');
+        setSelectedVersionId(null);
+        fetchAllData();
+    };
 
     const handleGenerateSchedule = async (scheduleId, command) => {
         setIsGenerating(scheduleId);
@@ -290,7 +312,8 @@ const ManageSchedules = () => {
                 method: 'PATCH',
                 body: JSON.stringify({ version_comment: newName })
             });
-            setViewMode('active'); // بعد التفعيل اعرض النسخة المفعّلة
+            setSelectedVersionId(versionId); // بعد التفعيل اعرض النسخة المفعّلة
+            setViewMode('version');
             fetchAllData();
         } catch (err) { setError(err.message); }
     };
@@ -420,7 +443,10 @@ const ManageSchedules = () => {
                                 </Card>
 
                                 <Card className="border-0 shadow-sm bg-light">
-                                    <Card.Header className="bg-white border-bottom fw-bold"><FaSave className="me-2 text-success"/> Saved Versions</Card.Header>
+                                    <Card.Header className="bg-white border-bottom fw-bold d-flex justify-content-between align-items-center">
+                                        <span><FaSave className="me-2 text-success"/> Saved Versions</span>
+                                        <Button variant="outline-secondary" size="sm" onClick={handleShowRaw}>Show DB</Button>
+                                    </Card.Header>
                                     <Card.Body style={{maxHeight: '400px', overflowY: 'auto'}}>
                                         {savedVersions.length > 0 ? (
                                             <ListGroup variant="flush">
@@ -428,10 +454,15 @@ const ManageSchedules = () => {
                                                     <ListGroup.Item key={version.id} className="bg-transparent border-bottom">
                                                         <div className="d-flex justify-content-between align-items-start mb-2">
                                                             <div>
-                                                                <div className="fw-bold small">{version.version_comment}</div>
+                                                                <Button variant="link" className="fw-bold small p-0 text-start" onClick={() => handleViewVersion(version)}>
+                                                                    {version.version_comment}
+                                                                </Button>
                                                                 <div className="text-muted" style={{fontSize:'0.7rem'}}>{new Date(version.created_at).toLocaleDateString()}</div>
                                                             </div>
-                                                            {version.is_active && <Badge bg="success" pill>Active</Badge>}
+                                                            <div className="d-flex flex-column align-items-end gap-1">
+                                                                {viewMode === 'version' && selectedVersionId === version.id && <Badge bg="info" pill>Viewing</Badge>}
+                                                                {version.is_active && <Badge bg="success" pill>Active</Badge>}
+                                                            </div>
                                                         </div>
                                                         <div className="d-flex gap-1 justify-content-end">
                                                             {!version.is_active && <Button variant="outline-success" size="sm" style={{fontSize:'0.7rem'}} onClick={() => handleActivateVersion(version.id)}>Activate</Button>}
