@@ -272,9 +272,18 @@ const ManageSchedules = () => {
                     currentLevel,
                     currentSchedule,
                     user_command: command,
-                    seCourses: allCourses.filter((course) =>
-                        String(course.dept_code || '').toUpperCase() === 'SE' || course.is_elective
-                    ),
+                    // اعتمد فقط المواد SE أو المواد المعتمدة is_approved (بدلاً من is_elective)
+                    seCourses: allCourses.filter((course) => {
+                        const isSE = String(course.dept_code || '').toUpperCase() === 'SE';
+                        const isApprovedElective = Boolean(course.is_approved);
+                        return isSE || isApprovedElective;
+                    }),
+                    // قواعد إضافية للـ AI: الحد من التتابع و الساعات الاختيارية
+                    rules: [
+                        'No more than 2 consecutive hours for any single course block per day.',
+                        'Use only approved electives (is_approved=true).',
+                        'Keep elective credit hours within allowed limits; prefer spreading electives across days.'
+                    ]
                 }),
             });
             setSchedules(prev => prev.map(sch => sch.id === scheduleId ? { ...sch, sections: response.schedule } : sch));
