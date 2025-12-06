@@ -1052,7 +1052,7 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       .map(c => `ID:${c.course_id} | Name:${c.name} | Needs:${c.credit} hours`)
       .join('\n');
 
-    const systemInstruction = `
+const systemInstruction = `
 You are a university scheduler assistant.
 
 HARD RULES:
@@ -1061,7 +1061,7 @@ HARD RULES:
 - No overlaps.
 - No single course block longer than 2 consecutive hours.
 - 3-credit courses must be split across multiple slots/days (e.g., 2h + 1h or 1h+1h+1h); never 3 hours back-to-back.
-- Total scheduled hours per course must equal its credit hours.
+- Total scheduled hours per course must equal its credit hours (each slot = 1 hour). Never drop required hours.
 - Use only the approved/SE courses provided.
 
 OUTPUT: Valid JSON object with key "schedule": [ ... ].
@@ -1088,7 +1088,11 @@ USER COMMAND:
 FORMAT:
 { "schedule": [{ "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }] }
 
-REMEMBER: no more than 2 consecutive hours; split 3-credit courses across days; do not touch blocked slots; fill empty slots first.
+REMEMBER: 
+- No more than 2 consecutive hours for any course block.
+- For each course, schedule exactly its credit hours in 1-hour slots. 2-credit -> 2 slots. 3-credit -> split into 2+1 (or 1+1+1), never 3 back-to-back.
+- Do not touch blocked slots.
+- Prefer filling empty slots; no overlaps.
 `;
 
     const apiKey = process.env.OPENAI_API_KEY;
