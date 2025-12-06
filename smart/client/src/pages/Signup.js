@@ -40,11 +40,11 @@ function Signup() {
   };
 
   useEffect(() => {
-    // أي إيميل غير جامعي أو إيميل طالب: ثبت الدور على Student وأغلق القائمة
+    // Force role to student for student/generic emails
     if ((emailType === 'student' || emailType === 'generic') && formData.role !== 'student') {
       setFormData((prev) => ({ ...prev, role: 'student' }));
     }
-    // إيميل جامعي للطاقم: افتح الاختيار وأفرغ الدور ليتم اختياره
+    // Reset role when switching to staff email if role was student
     if (emailType === 'staff' && formData.role === 'student') {
       setFormData((prev) => ({ ...prev, role: '' }));
     }
@@ -55,18 +55,13 @@ function Signup() {
     setError('');
     setSuccess('');
 
-    console.log('=== SIGNUP ATTEMPT ===');
-    console.log('Form Data:', formData);
-
     // Validation
     if (!formData.name.trim()) {
-      console.log('ERROR: Name is empty');
       setError('Name is required');
       return;
     }
 
     if (!validateEmail(formData.email)) {
-      console.log('ERROR: Invalid email format');
       setError('Please enter a valid email address');
       return;
     }
@@ -75,15 +70,11 @@ function Signup() {
     const isStaff = emailType === 'staff';
 
     if (formData.password.length < 6) {
-      console.log('ERROR: Password too short');
       setError('Password must be at least 6 characters long');
       return;
     }
 
-    console.log('Email type:', emailType);
-
     if (isStaff && !formData.role) {
-      console.log('ERROR: No role selected for staff');
       setError('Please select a role');
       return;
     }
@@ -92,7 +83,6 @@ function Signup() {
 
     try {
       if (isStudentType) {
-        console.log('Attempting STUDENT registration...');
         const requestData = {
           name: formData.name,
           email: formData.email,
@@ -101,12 +91,8 @@ function Signup() {
           is_ir: false,
           committeePassword: '123'
         };
-        console.log('Student Request Data:', requestData);
-        
-        const response = await authAPI.registerStudent(requestData);
-        console.log('Student Registration SUCCESS:', response.data);
+        await authAPI.registerStudent(requestData);
       } else {
-        console.log('Attempting USER registration...');
         const requestData = {
           name: formData.name,
           email: formData.email,
@@ -114,10 +100,7 @@ function Signup() {
           role: formData.role,
           committeePassword: '123'
         };
-        console.log('User Request Data:', requestData);
-        
-        const response = await authAPI.registerUser(requestData);
-        console.log('User Registration SUCCESS:', response.data);
+        await authAPI.registerUser(requestData);
       }
 
       setSuccess('Account created successfully! Redirecting to login...');
@@ -126,13 +109,6 @@ function Signup() {
       }, 2000);
 
     } catch (err) {
-      console.error('=== REGISTRATION ERROR ===');
-      console.error('Full Error:', err);
-      console.error('Error Response:', err.response);
-      console.error('Error Data:', err.response?.data);
-      console.error('Error Status:', err.response?.status);
-      console.error('Error Message:', err.message);
-      
       setError(err.response?.data?.error || err.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);

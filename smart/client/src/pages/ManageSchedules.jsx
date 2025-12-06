@@ -214,13 +214,9 @@ const ManageSchedules = () => {
             ]);
             setAllCourses(allCoursesData);
             setSavedVersions(versionsData);
-            const activeVersion = versionsData.find(v => v.is_active);
-            let sectionsToDisplay = [];
-            if (activeVersion && activeVersion.sections) {
-                sectionsToDisplay = typeof activeVersion.sections === 'string' ? JSON.parse(activeVersion.sections) : activeVersion.sections;
-            } else {
-                sectionsToDisplay = allSectionsData.filter((sec) => sec.level != null && parseInt(sec.level) === currentLevel);
-            }
+
+            // Default view: raw sections from DB for the current level.
+            const sectionsToDisplay = allSectionsData.filter((sec) => sec.level != null && parseInt(sec.level) === currentLevel);
             const group1 = sectionsToDisplay.filter((sec) => sec.student_group === 1 || !sec.student_group);
             const group2 = sectionsToDisplay.filter((sec) => sec.student_group === 2);
             const finalSchedules = [{ id: 1, sections: group1 }];
