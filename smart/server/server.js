@@ -1048,8 +1048,29 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       `${s.day_code} ${s.start_time}-${s.end_time} (Fixed: ${s.course_name || s.course_id})`
     ).join('\n');
 
-    const requiredCoursesText = resolvedSeCourses
-      .map(c => `ID:${c.course_id} | Name:${c.name} | Needs:${c.credit} hours`)
+    // Count already scheduled hours for managed courses
+    const currentHoursMap = new Map();
+    currentSeSections.forEach((s) => {
+      const startHour = parseInt((s.start_time || '0').split(':')[0], 10);
+      const endHour = parseInt((s.end_time || '0').split(':')[0], 10);
+      const duration = Math.max(1, endHour - startHour);
+      currentHoursMap.set(Number(s.course_id), (currentHoursMap.get(Number(s.course_id)) || 0) + duration);
+    });
+
+    const courseNeeds = resolvedSeCourses.map((c) => {
+      const scheduled = currentHoursMap.get(Number(c.course_id)) || 0;
+      const credit = Number(c.credit) || 1;
+      return {
+        id: c.course_id,
+        name: c.name,
+        credit,
+        scheduled,
+        remaining: Math.max(0, credit - scheduled),
+      };
+    });
+
+    const requiredCoursesText = courseNeeds
+      .map(c => `ID:${c.id} | Name:${c.name} | Credit:${c.credit}h | Scheduled:${c.scheduled}h | Remaining:${c.remaining}h`)
       .join('\n');
 
 const systemInstruction = `
@@ -1093,6 +1114,7 @@ REMEMBER:
 - For each course, schedule exactly its credit hours in 1-hour slots. 2-credit -> 2 slots. 3-credit -> split into 2+1 (or 1+1+1), never 3 back-to-back.
 - Do not touch blocked slots.
 - Prefer filling empty slots; no overlaps.
+- If you cannot place all required hours, adjust placement to fit them instead of dropping any hours.
 `;
 
     const apiKey = process.env.OPENAI_API_KEY;
