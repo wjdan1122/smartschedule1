@@ -156,6 +156,7 @@ const ManageSchedules = () => {
     const [sendingId, setSendingId] = useState(null);
     const [userInfo, setUserInfo] = useState({ name: '', role: '', id: '', email: '' });
     const [onlineEditors, setOnlineEditors] = useState([]);
+    const [viewMode, setViewMode] = useState('raw'); // 'raw' | 'active'
 
     useEffect(() => {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -215,8 +216,15 @@ const ManageSchedules = () => {
             setAllCourses(allCoursesData);
             setSavedVersions(versionsData);
 
-            // Default view: raw sections from DB for the current level.
-            const sectionsToDisplay = allSectionsData.filter((sec) => sec.level != null && parseInt(sec.level) === currentLevel);
+            const activeVersion = versionsData.find(v => v.is_active);
+            let sectionsToDisplay = [];
+
+            if (viewMode === 'active' && activeVersion && activeVersion.sections) {
+                sectionsToDisplay = typeof activeVersion.sections === 'string' ? JSON.parse(activeVersion.sections) : activeVersion.sections;
+            } else {
+                // Default view: raw sections from DB for the current level.
+                sectionsToDisplay = allSectionsData.filter((sec) => sec.level != null && parseInt(sec.level) === currentLevel);
+            }
             const group1 = sectionsToDisplay.filter((sec) => sec.student_group === 1 || !sec.student_group);
             const group2 = sectionsToDisplay.filter((sec) => sec.student_group === 2);
             const finalSchedules = [{ id: 1, sections: group1 }];
@@ -226,7 +234,7 @@ const ManageSchedules = () => {
             if (err.message === 'AUTHENTICATION_FAILED') navigate('/login');
             else setError('Failed to load data. Please refresh the page.');
         } finally { setLoading(false); }
-    }, [currentLevel, navigate, studentCount]);
+    }, [currentLevel, navigate, studentCount, viewMode]);
 
     useEffect(() => { fetchAllData(); }, [fetchAllData]);
 
@@ -282,6 +290,7 @@ const ManageSchedules = () => {
                 method: 'PATCH',
                 body: JSON.stringify({ version_comment: newName })
             });
+            setViewMode('active'); // بعد التفعيل اعرض النسخة المفعّلة
             fetchAllData();
         } catch (err) { setError(err.message); }
     };
