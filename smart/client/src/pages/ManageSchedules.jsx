@@ -312,7 +312,7 @@ const ManageSchedules = () => {
                 method: 'PATCH',
                 body: JSON.stringify({ version_comment: newName })
             });
-            setSelectedVersionId(versionId); // بعد التفعيل اعرض النسخة المفعّلة
+            setSelectedVersionId(version.id); // بعد التفعيل اعرض النسخة المفعّلة
             setViewMode('version');
             fetchAllData();
         } catch (err) { setError(err.message); }
