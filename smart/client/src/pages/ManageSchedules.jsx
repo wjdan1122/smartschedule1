@@ -280,9 +280,12 @@ const ManageSchedules = () => {
                     }),
                     // قواعد إضافية للـ AI: الحد من التتابع و الساعات الاختيارية
                     rules: [
-                        'No more than 2 consecutive hours for any single course block per day.',
+                        'Do not place more than 2 consecutive hours for any single course block in a day.',
                         'Use only approved electives (is_approved=true).',
-                        'Keep elective credit hours within allowed limits; prefer spreading electives across days.'
+                        'Ensure total scheduled hours per course equal its credit hours.',
+                        'For 3-credit courses, split across multiple days (e.g., 2h + 1h) when slots allow; avoid placing all 3 hours back-to-back.',
+                        'Prefer distributing electives across empty slots/days to avoid stacking.',
+                        'Respect existing occupied slots and avoid conflicts.'
                     ]
                 }),
             });
