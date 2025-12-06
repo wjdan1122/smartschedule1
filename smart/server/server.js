@@ -1041,7 +1041,11 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 
     const currentSeSections = managedSections;
     const currentScheduleText = currentSeSections.map(s =>
-      `ID:${s.course_id} (${s.course_name}) -> Currently at ${s.day_code} ${s.start_time}`
+      `ID:${s.course_id} (${s.course_name}) -> ${s.day_code} ${s.start_time}-${s.end_time}`
+    ).join('\n');
+
+    const blockedSlotsText = fixedSections.map(s =>
+      `${s.day_code} ${s.start_time}-${s.end_time} (Fixed: ${s.course_name || s.course_id})`
     ).join('\n');
 
     const requiredCoursesText = resolvedSeCourses
@@ -1049,37 +1053,43 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       .join('\n');
 
     const systemInstruction = `
-    You are a university scheduler assistant.
-    
-    YOUR TASK:
-    1. Look at the "CURRENT SCHEDULE".
-    2. Apply the "USER COMMAND" (e.g., move a course). This is the most important step.
-    3. Ensure ALL courses in "REQUIRED COURSES" list are scheduled.
-        - If a course is already in the schedule and not changed by the user, KEEP IT as is.
-        - If a course is missing (e.g. an elective), find a free slot for it from "AVAILABLE SLOTS".
-    4. Respect "AVAILABLE SLOTS" only. Do not overlap.
-    
-    OUTPUT: Valid JSON array only.
-    `;
+You are a university scheduler assistant.
+
+HARD RULES:
+- Do NOT schedule in blocked slots (non-SE/fixed sections).
+- Keep existing SE sections unless the user command says to move them.
+- No overlaps.
+- No single course block longer than 2 consecutive hours.
+- 3-credit courses must be split across multiple slots/days (e.g., 2h + 1h or 1h+1h+1h); never 3 hours back-to-back.
+- Total scheduled hours per course must equal its credit hours.
+- Use only the approved/SE courses provided.
+
+OUTPUT: Valid JSON object with key "schedule": [ ... ].
+`;
 
     const userQuery = `
-    CONTEXT: Level ${currentLevel}
-    
-    AVAILABLE SLOTS (Use these for new/moved courses):
-    ${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
+CONTEXT: Level ${currentLevel}
 
-    REQUIRED COURSES (Must be present in output):
-    ${requiredCoursesText}
+BLOCKED SLOTS (never use):
+${blockedSlotsText || 'None'}
 
-    CURRENT SCHEDULE (Keep these unless User Command says otherwise):
-    ${currentScheduleText}
+AVAILABLE SLOTS (free one-hour blocks you may use):
+${JSON.stringify(freeSlots.map(s => `${s.day} ${s.time}`))}
 
-    USER COMMAND: 
-    "${user_command || 'Generate/Update schedule'}"
+REQUIRED COURSES (must schedule all, respecting credit hours):
+${requiredCoursesText}
 
-    OUTPUT FORMAT:
-    { "schedule": [{ "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }] }
-    `;
+CURRENT SCHEDULE (keep unless user asks to move):
+${currentScheduleText || 'None'}
+
+USER COMMAND:
+"${user_command || 'Generate/Update schedule'}"
+
+FORMAT:
+{ "schedule": [{ "course_id": <NUMBER>, "day": "S"|"M"|"T"|"W"|"H", "start_time": "HH:MM", "end_time": "HH:MM", "section_type": "LECTURE" }] }
+
+REMEMBER: no more than 2 consecutive hours; split 3-credit courses across days; do not touch blocked slots; fill empty slots first.
+`;
 
     const apiKey = process.env.OPENAI_API_KEY;
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
