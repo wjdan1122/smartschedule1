@@ -1,4 +1,4 @@
-console.log("??? RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ???");
+﻿console.log("??? RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ???");
 console.log("?? Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -109,7 +109,7 @@ const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER, // ???? ???? ?? Render
-    pass: process.env.EMAIL_PASS� // ???? ???? ?? Render
+    pass: process.env.EMAIL_PASS  // ???? ???? ?? Render
   }
 });
 
@@ -1303,8 +1303,7 @@ REMEMBER:
         let remaining = c.hours_needed_fix;
 
         while (remaining > 0) {
-          const chunkHours = 1; // ???? ???? ???? ?????? ?????
-          const slot = findFallbackSlot(chunkHours);
+          const chunkHours = 1; // نضيف ساعة بساعة لتفادي كتل طويلة\r\n          const slot = findFallbackSlotForCourse(c.course_id, chunkHours);
 
           const fallbackDay = slot?.day || 'S';
           const startHour = slot?.startHour ?? 8;
@@ -1553,5 +1552,6 @@ const gracefulShutdown = () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
+
 
 
