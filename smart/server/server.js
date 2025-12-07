@@ -1,4 +1,4 @@
-﻿console.log("??? RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ???");
+console.log("??? RUNNING THE LATEST SERVER.JS FILE (OpenAI Ready & FINAL RESPONSE FORMAT FIX) ???");
 console.log("?? Running THIS server.js from smart3/smart/server");
 
 const express = require('express');
@@ -109,7 +109,7 @@ const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER, // ???? ???? ?? Render
-    pass: process.env.EMAIL_PASS  // ???? ???? ?? Render
+    pass: process.env.EMAIL_PASS� // ???? ???? ?? Render
   }
 });
 
@@ -240,7 +240,7 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
 });
 
 // ========================================================================================
-// ✅ تم تعديل هذه الدالة لاستخدام EmailJS فقط وإلقاء خطأ حقيقي عند الفشل.
+// ? ?? ????? ??? ?????? ???????? EmailJS ??? ?????? ??? ????? ??? ?????.
 // ========================================================================================
 app.post('/api/auth/forgot-password', async (req, res) => {
   const client = await pool.connect();
@@ -249,7 +249,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     const userCheck = await client.query('SELECT * FROM users WHERE email = $1', [email]);
 
     if (userCheck.rows.length === 0) {
-      // إبقاء رسالة مبهمة لأغراض أمنية
+      // ????? ????? ????? ?????? ?????
       return res.json({ message: 'If an account exists, reset instructions have been sent.' });
     }
 
@@ -263,25 +263,25 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     // 1. Try EmailJS only
     if (canUseEmailJS()) {
       await sendResetWithEmailJS({ to: email, resetLink });
-      console.log('✅ EmailJS successful.');
+      console.log('? EmailJS successful.');
     } else {
-      // إذا لم يتم تهيئة EmailJS، ألقِ خطأ هنا.
+      // ??? ?? ??? ????? EmailJS? ???? ??? ???.
       throw new Error('EmailJS is not configured in environment variables.');
     }
 
-    // إذا وصلت إلى هنا، فهذا يعني أن EmailJS نجح
+    // ??? ???? ??? ???? ???? ???? ?? EmailJS ???
     res.json({ success: true, message: 'Email sent successfully' });
 
   } catch (error) {
     console.error('Forgot Password Error (EmailJS failed):', error.message || error);
-    // إرجاع رمز خطأ 500 ورسالة تفيد بالفشل
+    // ????? ??? ??? 500 ?????? ???? ??????
     res.status(500).json({ error: 'Failed to send reset email. Please try again later.' });
   } finally {
     client.release();
   }
 });
 // ========================================================================================
-// ✅ نهاية التعديل
+// ? ????? ???????
 // ========================================================================================
 
 // ? (????) ???? ??? ???? ?????? ???????
@@ -1184,7 +1184,7 @@ REMEMBER:
     // Fix: Calculate actual scheduled hours vs required credit hours
     // ============================================================
 
-    // 1. حساب الساعات المجدولة فعلياً لكل مادة
+    // 1. ???? ??????? ???????? ?????? ??? ????
     const scheduledHoursMap = new Map();
 
     const addHoursToMap = (sectionsList) => {
@@ -1199,10 +1199,10 @@ REMEMBER:
       });
     };
 
-    addHoursToMap(managedSections);      // الساعات القديمة
-    addHoursToMap(normalizedSections);   // الساعات الجديدة من الـ AI
+    addHoursToMap(managedSections);      // ??????? ???????
+    addHoursToMap(normalizedSections);   // ??????? ??????? ?? ??? AI
 
-    // 2. تحديد المواد التي ساعاتها ناقصة
+    // 2. ????? ?????? ???? ??????? ?????
     const coursesToForce = [];
     resolvedSeCourses.forEach(c => {
       const id = Number(c.course_id);
@@ -1212,12 +1212,12 @@ REMEMBER:
       if (have < needed) {
         coursesToForce.push({
           ...c,
-          hours_needed_fix: needed - have // الساعات المتبقية فقط
+          hours_needed_fix: needed - have // ??????? ???????? ???
         });
       }
     });
 
-    // 3. تجهيز خريطة الأوقات المشغولة
+    // 3. ????? ????? ??????? ????????
     const slotKey = (day, hour) => `${day}-${hour}`;
     const markOccupiedRange = (store, dayValue, startTime, endTime) => {
       const normalized = normalizeDay(dayValue);
@@ -1234,7 +1234,46 @@ REMEMBER:
     managedSections.forEach(section => markOccupiedRange(fallbackOccupied, section.day_code, section.start_time, section.end_time));
     normalizedSections.forEach(section => markOccupiedRange(fallbackOccupied, section.day || section.day_code, section.start_time, section.end_time));
 
-    const findFallbackSlot = (blockHours = 1) => {
+    // ???? ????? ?? ???? ?? ?? ??? ???? ???? ?? ?????? ?????????
+    const courseDayHours = new Map(); // courseId -> Map(day -> Set(hours))
+    const addCourseHours = (cid, day, startHour, endHour) => {
+      const byDay = courseDayHours.get(cid) || new Map();
+      const set = byDay.get(day) || new Set();
+      for (let h = startHour; h < endHour; h++) set.add(h);
+      byDay.set(day, set);
+      courseDayHours.set(cid, byDay);
+    };
+    const seedCourseHours = (list) => {
+      list.forEach(s => {
+        const cid = Number(s.course_id);
+        const day = normalizeDay(s.day || s.day_code);
+        const startHour = toHour(s.start_time);
+        const endHour = toHour(s.end_time);
+        if (!cid || !day || startHour === null || endHour === null) return;
+        addCourseHours(cid, day, startHour, endHour);
+      });
+    };
+    seedCourseHours(managedSections);
+    seedCourseHours(normalizedSections);
+
+    const wouldExceedTwoConsecutive = (cid, day, startHour, blockHours) => {
+      const byDay = courseDayHours.get(cid);
+      if (!byDay) return blockHours > 2;
+      const set = byDay.get(day) || new Set();
+      let maxStreak = blockHours;
+      for (let h = startHour; h < startHour + blockHours; h++) {
+        let streak = 1;
+        let left = h - 1;
+        while (set.has(left)) { streak++; left--; }
+        let right = h + 1;
+        while (set.has(right)) { streak++; right++; }
+        if (streak > maxStreak) maxStreak = streak;
+        if (maxStreak > 2) return true;
+      }
+      return maxStreak > 2;
+    };
+
+    const findFallbackSlotForCourse = (courseId, blockHours = 1) => {
       const safeBlock = Math.max(1, blockHours);
       for (const day of days) {
         for (const hour of hours) {
@@ -1245,8 +1284,9 @@ REMEMBER:
             if (avoidLunch && h === 12) { canUse = false; break; }
             if (fallbackOccupied.has(slotKey(day, h))) { canUse = false; break; }
           }
-          if (canUse) {
+          if (canUse && !wouldExceedTwoConsecutive(courseId, day, hour, safeBlock)) {
             for (let h = hour; h < hour + safeBlock; h++) { fallbackOccupied.add(slotKey(day, h)); }
+            addCourseHours(courseId, day, hour, hour + safeBlock);
             return { day, startHour: hour, start_time: hourToTime(hour), end_time: hourToTime(hour + safeBlock) };
           }
         }
@@ -1254,16 +1294,16 @@ REMEMBER:
       return null;
     };
 
-    // 4. تعويض الساعات الناقصة
+    // 4. ????? ??????? ???????
     if (coursesToForce.length > 0) {
-      console.warn('⚠️ AI Incomplete Credits: Forcing remaining hours...', coursesToForce.map(c => `${c.name}: ${c.hours_needed_fix}h`));
+      console.warn('?? AI Incomplete Credits: Forcing remaining hours...', coursesToForce.map(c => `${c.name}: ${c.hours_needed_fix}h`));
 
       coursesToForce.forEach(c => {
         const meta = courseMetaMap.get(Number(c.course_id)) || {};
         let remaining = c.hours_needed_fix;
 
         while (remaining > 0) {
-          const chunkHours = 1; // نوزع ساعة ساعة لسهولة الحشر
+          const chunkHours = 1; // ???? ???? ???? ?????? ?????
           const slot = findFallbackSlot(chunkHours);
 
           const fallbackDay = slot?.day || 'S';
@@ -1271,11 +1311,7 @@ REMEMBER:
           const fallbackStart = slot?.start_time || hourToTime(startHour);
           const fallbackEnd = slot?.end_time || hourToTime(startHour + chunkHours);
 
-          if (!slot) {
-            for (let h = startHour; h < startHour + chunkHours; h++) {
-              fallbackOccupied.add(slotKey(fallbackDay, h));
-            }
-          }
+          if (!slot) {\n            // ?? ????: ??? ?????? ??? ?? ?? ??? ????\n            for (let h = startHour; h < startHour + chunkHours; h++) {\n              fallbackOccupied.add(slotKey(fallbackDay, h));\n            }\n            addCourseHours(Number(c.course_id), fallbackDay, startHour, startHour + chunkHours);\n          }
 
           normalizedSections.push({
             course_id: c.course_id,
@@ -1517,3 +1553,5 @@ const gracefulShutdown = () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
+
+
