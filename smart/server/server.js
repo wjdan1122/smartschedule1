@@ -909,8 +909,9 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
 
       SELECT c.course_id, c.name, c.credit, c.dept_code, c.is_elective
       FROM courses c
-      INNER JOIN approved_electives_by_level aebl ON c.course_id = aebl.course_id
-      WHERE c.is_elective = true AND c.is_approved = true AND aebl.level = $1
+      INNER JOIN approved_electives_by_level aebl 
+        ON c.course_id = aebl.course_id AND aebl.level = $1
+      WHERE c.is_elective = true
       `,
       [currentLevel]
     );
