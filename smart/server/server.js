@@ -1368,6 +1368,19 @@ REMEMBER:
 // ============================================
 // RULES & COMMENTS ROUTES
 // ============================================
+app.get('/api/rules', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query('SELECT rule_id, text, user_id, created_at FROM rules ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching rules:', error);
+    res.status(500).json({ error: 'Failed to fetch rules.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.post('/api/rules', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
