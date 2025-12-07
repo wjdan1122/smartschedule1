@@ -1162,7 +1162,8 @@ REMEMBER:
         let cursor = startHour;
         const normalizedType = String(section.section_type || 'LECTURE').toUpperCase();
         while (remaining > 0) {
-          const chunk = meta.is_elective ? Math.min(2, remaining) : remaining;
+          // Split any course into blocks of at most 2 hours to avoid long consecutive sessions
+          const chunk = Math.min(2, remaining);
           const start_time = hourToTime(cursor);
           const end_time = hourToTime(cursor + chunk);
           resultArr.push({
