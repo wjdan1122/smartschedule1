@@ -8,7 +8,8 @@ function Signup() {
     name: '',
     email: '',
     password: '',
-    role: ''
+    role: '',
+    level: ''
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -79,6 +80,14 @@ function Signup() {
       return;
     }
 
+    if (isStudentType) {
+      const lvl = parseInt(formData.level, 10);
+      if (!lvl || lvl < 3 || lvl > 8) {
+        setError('Please enter a valid level (3-8)');
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -87,7 +96,7 @@ function Signup() {
           name: formData.name,
           email: formData.email,
           password: formData.password,
-          level: 1,
+          level: parseInt(formData.level, 10) || 3,
           is_ir: false,
           committeePassword: '123'
         };
@@ -141,6 +150,22 @@ function Signup() {
                       required
                       disabled={loading}
                     />
+                  </Form.Group>
+
+                  <Form.Group className="mb-3">
+                    <Form.Label>Level (3-8)</Form.Label>
+                    <Form.Select
+                      name="level"
+                      value={formData.level}
+                      onChange={handleChange}
+                      required={emailType === 'student' || emailType === 'generic'}
+                      disabled={loading}
+                    >
+                      <option value="">Select level</option>
+                      {[3,4,5,6,7,8].map(lvl => (
+                        <option key={lvl} value={lvl}>{lvl}</option>
+                      ))}
+                    </Form.Select>
                   </Form.Group>
 
                   <Form.Group className="mb-3">
