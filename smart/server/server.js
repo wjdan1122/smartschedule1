@@ -1179,8 +1179,9 @@ REMEMBER:
 
     const normalizedSections = normalizeGeneratedSections(scheduleArray);
 
+
     // ============================================================
-    // بداية التعديل: حساب الساعات الفعلي وإكمال النواقص
+    // Fix: Calculate actual scheduled hours vs required credit hours
     // ============================================================
 
     // 1. حساب الساعات المجدولة فعلياً لكل مادة
@@ -1201,22 +1202,22 @@ REMEMBER:
     addHoursToMap(managedSections);      // الساعات القديمة
     addHoursToMap(normalizedSections);   // الساعات الجديدة من الـ AI
 
-    // 2. تحديد المواد التي ساعاتها ناقصة (مثلاً مادة 3 ساعات، الجدول فيه ساعتين فقط)
+    // 2. تحديد المواد التي ساعاتها ناقصة
     const coursesToForce = [];
     resolvedSeCourses.forEach(c => {
       const id = Number(c.course_id);
       const needed = Number(c.credit) || 1;
-      const have = scheduledHoursMap.get(id) || 0; // كم ساعة تم جدولتها فعلاً
+      const have = scheduledHoursMap.get(id) || 0;
 
       if (have < needed) {
         coursesToForce.push({
           ...c,
-          hours_needed_fix: needed - have // عدد الساعات المتبقية التي يجب إضافتها
+          hours_needed_fix: needed - have // الساعات المتبقية فقط
         });
       }
     });
 
-    // 3. تجهيز خريطة الأوقات المشغولة (Occupied Grid)
+    // 3. تجهيز خريطة الأوقات المشغولة
     const slotKey = (day, hour) => `${day}-${hour}`;
     const markOccupiedRange = (store, dayValue, startTime, endTime) => {
       const normalized = normalizeDay(dayValue);
@@ -1228,40 +1229,24 @@ REMEMBER:
       }
     };
 
-    const fallbackOccupiedDup = fallbackOccupied; // duplicate ignored
-    // حجز أماكن المواد الثابتة
+    const fallbackOccupied = new Set();
     fixedSections.forEach(section => markOccupiedRange(fallbackOccupied, section.day_code, section.start_time, section.end_time));
-    // حجز أماكن المواد القديمة المعدلة
-    managedSections.forEach(section => {
-      markOccupiedRange(fallbackOccupied, section.day_code, section.start_time, section.end_time);
-    });
-    // حجز أماكن المواد التي اقترحها الـ AI قبل قليل
-    normalizedSections.forEach(section => {
-      markOccupiedRange(fallbackOccupied, section.day || section.day_code, section.start_time, section.end_time);
-    });
+    managedSections.forEach(section => markOccupiedRange(fallbackOccupied, section.day_code, section.start_time, section.end_time));
+    normalizedSections.forEach(section => markOccupiedRange(fallbackOccupied, section.day || section.day_code, section.start_time, section.end_time));
 
-    // دالة البحث عن وقت فارغ
     const findFallbackSlot = (blockHours = 1) => {
       const safeBlock = Math.max(1, blockHours);
       for (const day of days) {
         for (const hour of hours) {
-          if (hour + safeBlock > 15) continue; // ممنوع بعد الساعة 3
-          if (avoidLunch && hour === 12) continue; // تفادي وقت البريك
-
+          if (hour + safeBlock > 15) continue;
+          if (avoidLunch && hour === 12) continue;
           let canUse = true;
           for (let h = hour; h < hour + safeBlock; h++) {
             if (avoidLunch && h === 12) { canUse = false; break; }
-            if (fallbackOccupied.has(slotKey(day, h))) {
-              canUse = false;
-              break;
-            }
+            if (fallbackOccupied.has(slotKey(day, h))) { canUse = false; break; }
           }
-
           if (canUse) {
-            // حجز مبدئي لعدم التكرار في نفس اللوب
-            for (let h = hour; h < hour + safeBlock; h++) {
-              fallbackOccupied.add(slotKey(day, h));
-            }
+            for (let h = hour; h < hour + safeBlock; h++) { fallbackOccupied.add(slotKey(day, h)); }
             return { day, startHour: hour, start_time: hourToTime(hour), end_time: hourToTime(hour + safeBlock) };
           }
         }
@@ -1269,18 +1254,16 @@ REMEMBER:
       return null;
     };
 
-    // 4. تنفيذ تعويض الساعات الناقصة
+    // 4. تعويض الساعات الناقصة
     if (coursesToForce.length > 0) {
-      console.warn('⚠️ AI Incomplete Credits: Forcing remaining hours...', coursesToForce.map(c => `${c.name} needs ${c.hours_needed_fix}h`));
+      console.warn('⚠️ AI Incomplete Credits: Forcing remaining hours...', coursesToForce.map(c => `${c.name}: ${c.hours_needed_fix}h`));
 
       coursesToForce.forEach(c => {
         const meta = courseMetaMap.get(Number(c.course_id)) || {};
-        let remaining = c.hours_needed_fix; // نأخذ فقط عدد الساعات الناقصة
+        let remaining = c.hours_needed_fix;
 
         while (remaining > 0) {
-          // نحاول توزيعها ساعة ساعة لتسهيل إيجاد مكان، إلا إذا كانت اختياري نحاول ساعتين
-          const chunkHours = 1;
-
+          const chunkHours = 1; // نوزع ساعة ساعة لسهولة الحشر
           const slot = findFallbackSlot(chunkHours);
 
           const fallbackDay = slot?.day || 'S';
@@ -1288,63 +1271,12 @@ REMEMBER:
           const fallbackStart = slot?.start_time || hourToTime(startHour);
           const fallbackEnd = slot?.end_time || hourToTime(startHour + chunkHours);
 
-          // إذا لم نجد مكاناً، نحشرها فوق مادة أخرى (Overlapping) كحل أخير
           if (!slot) {
             for (let h = startHour; h < startHour + chunkHours; h++) {
               fallbackOccupied.add(slotKey(fallbackDay, h));
             }
           }
 
-          normalizedSections.push({
-            course_id: c.course_id,
-            course_name: c.name,
-            day: fallbackDay,
-            day_code: fallbackDay,
-            start_time: fallbackStart,
-            end_time: fallbackEnd,
-            section_type: "LECTURE",
-            is_forced: true // علامة لتمييز أن النظام أضافها إجبارياً
-          });
-
-          remaining -= chunkHours;
-        }
-      });
-    }
-
-    // ============================================================
-    // نهاية التعديل
-    // ============================================================
-    const fallbackOccupied = new Set();
-    fixedSections.forEach(section => markOccupiedRange(fallbackOccupied, section.day_code, section.start_time, section.end_time));
-    managedSections.forEach(section => {
-      if (!scheduledIds.has(Number(section.course_id))) {
-        markOccupiedRange(fallbackOccupied, section.day_code, section.start_time, section.end_time);
-      }
-    });
-    normalizedSections.forEach(section => {
-      markOccupiedRange(fallbackOccupied, section.day || section.day_code, section.start_time, section.end_time);
-    });
-
-    // duplicate findFallbackSlot removed (use the earlier definition)
-
-    if (missingCourses.length > 0) {
-      console.warn('?? AI missed courses. Forcing...', missingCourses.map(c => c.name));
-      missingCourses.forEach(c => {
-        const meta = courseMetaMap.get(Number(c.course_id)) || {};
-        const totalHours = Math.max(1, Number(meta.credit) || 1);
-        let remaining = totalHours;
-        while (remaining > 0) {
-          const chunkHours = meta.is_elective ? Math.min(2, remaining) : remaining;
-          const slot = findFallbackSlot(chunkHours);
-          const fallbackDay = slot?.day || 'S';
-          const startHour = slot?.startHour ?? 8;
-          const fallbackStart = slot?.start_time || hourToTime(startHour);
-          const fallbackEnd = slot?.end_time || hourToTime(startHour + chunkHours);
-          if (!slot) {
-            for (let h = startHour; h < startHour + chunkHours; h++) {
-              fallbackOccupied.add(slotKey(fallbackDay, h));
-            }
-          }
           normalizedSections.push({
             course_id: c.course_id,
             course_name: c.name,
