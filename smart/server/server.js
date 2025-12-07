@@ -1292,6 +1292,30 @@ REMEMBER:
       });
     }
 
+    // Recompute missingCourses after forced hours to avoid undefined reference and ensure all credits are met
+    const buildHoursMap = (lists) => {
+      const map = new Map();
+      lists.forEach(list => {
+        list.forEach(s => {
+          const cid = Number(s.course_id);
+          if (!cid) return;
+          const sTime = s.start_time ? parseInt(s.start_time.split(':')[0], 10) : 0;
+          const eTime = s.end_time ? parseInt(s.end_time.split(':')[0], 10) : 0;
+          const duration = Math.max(1, eTime - sTime);
+          map.set(cid, (map.get(cid) || 0) + duration);
+        });
+      });
+      return map;
+    };
+
+    const finalHoursMap = buildHoursMap([managedSections, normalizedSections]);
+    const missingCourses = resolvedSeCourses.filter(c => {
+      const id = Number(c.course_id);
+      const needed = Number(c.credit) || 1;
+      const have = finalHoursMap.get(id) || 0;
+      return have < needed;
+    });
+
     normalizedSections.forEach(section => upsertManagedSection(section));
 
     const mergedSchedule = [...fixedSections, ...updatedManagedSections];
