@@ -1040,13 +1040,13 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
     });
 
     const currentSeSections = managedSections;
-    const currentScheduleText = currentSeSections.map(s =>
-      `ID:${s.course_id} (${s.course_name}) -> ${s.day_code} ${s.start_time}-${s.end_time}`
-    ).join('\n');
+    const currentScheduleText = currentSeSections
+      .map(s => `ID:${s.course_id} (${s.course_name}) -> ${s.day_code} ${s.start_time}-${s.end_time}`)
+      .join('\n');
 
-    const blockedSlotsText = fixedSections.map(s =>
-      `${s.day_code} ${s.start_time}-${s.end_time} (Fixed: ${s.course_name || s.course_id})`
-    ).join('\n');
+    const blockedSlotsText = fixedSections
+      .map(s => `${s.day_code} ${s.start_time}-${s.end_time} (Fixed: ${s.course_name || s.course_id})`)
+      .join('\n');
 
     // Count already scheduled hours for managed courses
     const currentHoursMap = new Map();
@@ -1303,14 +1303,22 @@ REMEMBER:
         let remaining = c.hours_needed_fix;
 
         while (remaining > 0) {
-          const chunkHours = 1; // نضيف ساعة بساعة لتفادي كتل طويلة\r\n          const slot = findFallbackSlotForCourse(c.course_id, chunkHours);
+          // Add one hour at a time to avoid long consecutive blocks
+          const chunkHours = 1;
+          const slot = findFallbackSlotForCourse(c.course_id, chunkHours);
 
           const fallbackDay = slot?.day || 'S';
           const startHour = slot?.startHour ?? 8;
           const fallbackStart = slot?.start_time || hourToTime(startHour);
           const fallbackEnd = slot?.end_time || hourToTime(startHour + chunkHours);
 
-          if (!slot) {\n            // ?? ????: ??? ?????? ??? ?? ?? ??? ????\n            for (let h = startHour; h < startHour + chunkHours; h++) {\n              fallbackOccupied.add(slotKey(fallbackDay, h));\n            }\n            addCourseHours(Number(c.course_id), fallbackDay, startHour, startHour + chunkHours);\n          }
+          if (!slot) {
+            // As a last resort, mark these hours as occupied even without a found slot
+            for (let h = startHour; h < startHour + chunkHours; h++) {
+              fallbackOccupied.add(slotKey(fallbackDay, h));
+            }
+            addCourseHours(Number(c.course_id), fallbackDay, startHour, startHour + chunkHours);
+          }
 
           normalizedSections.push({
             course_id: c.course_id,
@@ -1565,6 +1573,8 @@ const gracefulShutdown = () => {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
+
+
 
 
 
