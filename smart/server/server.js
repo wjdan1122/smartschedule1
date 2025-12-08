@@ -1194,25 +1194,58 @@ REMEMBER:
       return resultArr;
     };
 
-    const normalizedSections = normalizeGeneratedSections(scheduleArray);
+    // Trim any course hours to its credit limit (avoid duplicates/overfill from the model)
+    const clampSectionsToCredit = (sections) => {
+      const usedHours = new Map(); // courseId -> hours already kept
+      const clamped = [];
+      sections.forEach((s) => {
+        const cid = Number(s.course_id);
+        if (!cid) return;
+        const meta = courseMetaMap.get(cid) || {};
+        const credit = Math.max(1, Number(meta.credit) || 1);
+        const startH = toHour(s.start_time);
+        const endH = toHour(s.end_time);
+        if (startH === null || endH === null) return;
+        const dur = Math.max(1, endH - startH);
+        const used = usedHours.get(cid) || 0;
+        const remaining = credit - used;
+        if (remaining <= 0) return; // already satisfied
+
+        if (dur <= remaining) {
+          clamped.push(s);
+          usedHours.set(cid, used + dur);
+        } else {
+          // Trim the block to fit exactly the remaining needed hours
+          const newEnd = startH + remaining;
+          clamped.push({
+            ...s,
+            end_time: hourToTime(newEnd)
+          });
+          usedHours.set(cid, credit);
+        }
+      });
+      return clamped;
+    };
+
+    const normalizedSections = clampSectionsToCredit(normalizeGeneratedSections(scheduleArray));
 
 
     // ============================================================
     // Fix: Calculate actual scheduled hours vs required credit hours
     // ============================================================
 
-    // 1. ???? ??????? ???????? ?????? ??? ????
+    // 1. حساب الساعات المجدولة فعلياً لكل مادة
     const scheduledHoursMap = new Map();
 
     const addHoursToMap = (sectionsList) => {
       sectionsList.forEach(s => {
         const cid = Number(s.course_id);
-        if (cid) {
-          const sTime = s.start_time ? parseInt(s.start_time.split(':')[0]) : 0;
-          const eTime = s.end_time ? parseInt(s.end_time.split(':')[0]) : 0;
-          const duration = Math.max(1, eTime - sTime);
-          scheduledHoursMap.set(cid, (scheduledHoursMap.get(cid) || 0) + duration);
-        }
+        if (!cid) return;
+        const startH = toHour(s.start_time);
+        const endH = toHour(s.end_time);
+        if (startH === null || endH === null) return;
+        const duration = Math.max(1, endH - startH);
+        scheduledHoursMap.set(cid, (scheduledHoursMap.get(cid) || 0) + duration);
       });
     };
 
@@ -1359,9 +1392,10 @@ REMEMBER:
         list.forEach(s => {
           const cid = Number(s.course_id);
           if (!cid) return;
-          const sTime = s.start_time ? parseInt(s.start_time.split(':')[0], 10) : 0;
-          const eTime = s.end_time ? parseInt(s.end_time.split(':')[0], 10) : 0;
-          const duration = Math.max(1, eTime - sTime);
+          const startH = toHour(s.start_time);
+          const endH = toHour(s.end_time);
+          if (startH === null || endH === null) return;
+          const duration = Math.max(1, endH - startH);
           map.set(cid, (map.get(cid) || 0) + duration);
         });
       });
