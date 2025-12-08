@@ -982,13 +982,21 @@ app.post('/api/schedule/generate', authenticateToken, async (req, res) => {
       if (!courseId) return;
       const meta = courseMetaMap.get(courseId) || {};
       const normalizedType = String(sectionData.section_type || 'LECTURE').toUpperCase();
-      const matchIndex = updatedManagedSections.findIndex(existing =>
-        Number(existing.course_id) === courseId &&
-        String(existing.section_type || 'LECTURE').toUpperCase() === normalizedType
-      );
+      const normalizedDayInput = normalizeDay(sectionData.day || sectionData.day_code);
+      const timesInput = extractTimes(sectionData);
+
+      const matchIndex = updatedManagedSections.findIndex(existing => {
+        if (Number(existing.course_id) !== courseId) return false;
+        if (String(existing.section_type || 'LECTURE').toUpperCase() !== normalizedType) return false;
+        if (!normalizedDayInput || !timesInput) return false;
+        return normalizeDay(existing.day_code) === normalizedDayInput &&
+          existing.start_time === timesInput.start_time &&
+          existing.end_time === timesInput.end_time;
+      });
+
       const previous = matchIndex === -1 ? null : updatedManagedSections[matchIndex];
-      const normalizedDay = normalizeDay(sectionData.day || sectionData.day_code || previous?.day_code);
-      const times = extractTimes(sectionData) || (previous ? { start_time: previous.start_time, end_time: previous.end_time } : null);
+      const normalizedDay = normalizedDayInput || normalizeDay(previous?.day_code);
+      const times = timesInput || (previous ? { start_time: previous.start_time, end_time: previous.end_time } : null);
       if (!times || !normalizedDay) return;
 
       const baseData = {
@@ -1368,11 +1376,25 @@ REMEMBER:
       return have < needed;
     });
 
+    // If after forcing we still have missing hours, return an error to avoid dropping credits silently
+    if (missingCourses.length > 0) {
+      const details = missingCourses.map(c => ({
+        course_id: c.course_id,
+        name: c.name,
+        needed: Number(c.credit) || 1,
+        scheduled: finalHoursMap.get(Number(c.course_id)) || 0
+      }));
+      return res.status(400).json({
+        error: 'Failed to place all required credit hours. Please adjust blocked slots or hours and retry.',
+        missing: details
+      });
+    }
+
     normalizedSections.forEach(section => upsertManagedSection(section));
 
     const mergedSchedule = [...fixedSections, ...updatedManagedSections];
 
-    res.json({ success: true, schedule: mergedSchedule, warning: missingCourses.length > 0 ? "Some courses were auto-added." : null });
+    res.json({ success: true, schedule: mergedSchedule, warning: null });
 
   } catch (error) {
     console.error('AI Error:', error);
