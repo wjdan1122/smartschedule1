@@ -1284,12 +1284,31 @@ REMEMBER:
     managedSections.forEach(section => markOccupiedRange(fallbackOccupied, section.day_code, section.start_time, section.end_time));
     normalizedSections.forEach(section => markOccupiedRange(fallbackOccupied, section.day || section.day_code, section.start_time, section.end_time));
 
+    const unmarkOccupiedRange = (store, dayValue, startTime, endTime) => {
+      const normalized = normalizeDay(dayValue);
+      const start = toHour(startTime);
+      const end = toHour(endTime);
+      if (!normalized || start === null || end === null) return;
+      for (let h = start; h < end; h++) {
+        store.delete(slotKey(normalized, h));
+      }
+    };
+
     // ???? ????? ?? ???? ?? ?? ??? ???? ???? ?? ?????? ?????????
     const courseDayHours = new Map(); // courseId -> Map(day -> Set(hours))
     const addCourseHours = (cid, day, startHour, endHour) => {
       const byDay = courseDayHours.get(cid) || new Map();
       const set = byDay.get(day) || new Set();
       for (let h = startHour; h < endHour; h++) set.add(h);
+      byDay.set(day, set);
+      courseDayHours.set(cid, byDay);
+    };
+    const removeCourseHours = (cid, day, startHour, endHour) => {
+      const byDay = courseDayHours.get(cid);
+      if (!byDay) return;
+      const set = byDay.get(day);
+      if (!set) return;
+      for (let h = startHour; h < endHour; h++) set.delete(h);
       byDay.set(day, set);
       courseDayHours.set(cid, byDay);
     };
@@ -1343,6 +1362,37 @@ REMEMBER:
       }
       return null;
     };
+
+    // Re-distribute extra hours on the same day to other days when possible
+    normalizedSections.forEach(section => {
+      const cid = Number(section.course_id);
+      if (!cid) return;
+      const day = normalizeDay(section.day || section.day_code);
+      const startHour = toHour(section.start_time);
+      const endHour = toHour(section.end_time);
+      if (!day || startHour === null || endHour === null) return;
+      const duration = Math.max(1, endHour - startHour);
+      const byDay = courseDayHours.get(cid);
+      const hoursSet = byDay?.get(day) || new Set();
+      if (hoursSet.size > 2) {
+        // temporarily free current block before searching
+        unmarkOccupiedRange(fallbackOccupied, day, section.start_time, section.end_time);
+        removeCourseHours(cid, day, startHour, endHour);
+        const slot = findFallbackSlotForCourse(cid, duration);
+        if (slot) {
+          markOccupiedRange(fallbackOccupied, slot.day, slot.start_time, slot.end_time);
+          addCourseHours(cid, slot.day, slot.startHour, slot.startHour + duration);
+          section.day = slot.day;
+          section.day_code = slot.day;
+          section.start_time = slot.start_time;
+          section.end_time = slot.end_time;
+        } else {
+          // restore original placement if no alternative found
+          markOccupiedRange(fallbackOccupied, day, section.start_time, section.end_time);
+          addCourseHours(cid, day, startHour, endHour);
+        }
+      }
+    });
 
     // 4. ????? ??????? ???????
     if (coursesToForce.length > 0) {
